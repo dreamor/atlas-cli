@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { BrowserContext } from 'playwright';
-import { chromium } from 'playwright';
 import { BASE_URL, TARGET_HOST } from '../util/paths.js';
+import { loadPlaywright } from '../util/playwright-loader.js';
 import { saveSession, type CookieEntry, type Session } from './session.js';
 import { UserInfoSchema } from '../schema/models.js';
 
@@ -24,6 +24,7 @@ export async function runLogin(opts: {
   await mkdir(USER_DATA_DIR, { recursive: true });
   const isFirstRun = !existsSync(resolve(USER_DATA_DIR, 'Default'));
 
+  const { chromium } = await loadPlaywright('auth login');
   const context: BrowserContext = await chromium.launchPersistentContext(USER_DATA_DIR, {
     headless: false,
     viewport: { width: 1440, height: 900 },
