@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Browser, chromium } from 'playwright';
+import type { Browser } from 'playwright';
+import { loadPlaywright } from '../util/playwright-loader.js';
 
 const DEFAULT_PORT = 8765;
 
@@ -30,7 +31,7 @@ async function loginWithPlaywright(): Promise<Session> {
     }
   }
 
-  browser = await chromium.launch({ headless: false });
+  browser = await (await loadPlaywright('daemon')).chromium.launch({ headless: false });
   loginContext = await browser.newContext({
     userAgent:
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',

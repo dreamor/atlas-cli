@@ -14,6 +14,7 @@ npm run test         # 运行所有测试 (vitest)
 npm run test:watch   # 监听模式运行测试
 npm run verify       # 验证编译后的 CLI
 npm run auth:login   # 启动登录流程
+npm run build:bun    # 用 Bun 编译为单文件二进制（实验性，详见 docs/BUN_BUILD.md）
 ```
 
 ## Architecture
