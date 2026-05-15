@@ -81,6 +81,27 @@ ensure_atlas() {
     log "atlas binary OK ($ATLAS_BIN/atlas)"
     return
   fi
+
+  # Local-repo fallback: if the script lives in a checkout that has a
+  # freshly built binary (or can build one), use it. This makes bootstrap
+  # work in dev before any GitHub Release exists.
+  local script_dir repo_root local_bin
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  repo_root="$(cd "$script_dir/.." && pwd)"
+  local_bin="$repo_root/dist-bun/atlas"
+  if [[ -f "$repo_root/package.json" ]] && grep -q '"build:bun"' "$repo_root/package.json"; then
+    if [[ ! -x "$local_bin" ]] && command -v bun >/dev/null 2>&1; then
+      log "Building atlas binary locally via \`bun build --compile\`"
+      (cd "$repo_root" && npm run build:bun >/dev/null)
+    fi
+    if [[ -x "$local_bin" ]]; then
+      log "Using local build $local_bin"
+      cp "$local_bin" "$ATLAS_BIN/atlas"
+      chmod +x "$ATLAS_BIN/atlas"
+      return
+    fi
+  fi
+
   local artifact="atlas-${PLATFORM}"
   local url
   if [[ "$ATLAS_RELEASE_TAG" == "latest" ]]; then
