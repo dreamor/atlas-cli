@@ -84,6 +84,21 @@ mpLine 场景（`/projects/mpLine/list?projectId=<id>`）。通过
 2. 转换为 CLI 参数：--project-id、--department、--role、--from、--to
 3. 执行命令并展示结果
 
+### 项目名歧义处理（重要）
+
+`--project-id` 接受数字 ID 或项目名称的精确名称/唯一子串。当用户给的项目名匹配多个项目时，CLI 会以非零退出（`Config error: ... matched N projects`）并列出候选 ID + 名称。
+
+遇到这种情况：
+1. **不要重试或猜测**——把 CLI 列出的候选项目原样展示给用户（保留 ID 和完整名称）
+2. **询问用户选第几个**（或让用户给出更具体的关键词）
+3. 用户回复后，**用数字 ID 重试**，不要再用名称
+
+示例：
+- 用户："看下 BMW 项目的人力" → `month --project-id "BMW"` → 报错列出 5 个候选 → 你回复"匹配到 5 个，请选择：1) 2548 BMW IPA LLM 0726 项目 2) ... 您要看哪个？"
+- 用户："第 1 个" → `month --project-id 2548`
+
+不要默认选第一个；项目搞错会查到错的人力数据。
+
 示例：
 - "帮我看看产品部门2025年的人力" → `month --project-id <id> --department 产品 --from 2025-01 --to 2025-12`
 - "show me the headcount for algorithm team this year" → `month --project-id <id> --role 算法 --from 2026-01 --to 2026-12`
