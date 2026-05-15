@@ -48,6 +48,50 @@ curl -fsSL https://bun.sh/install | bash
 - [ ] `./dist-bun/atlas list`（或其他只读命令）能正常调用现有 session
 - [ ] 体积可接受（< 100 MB）
 
+## 一键安装
+
+合并 v0.1.0 后用户可直接安装到 `~/.atlas`（不需要 clone 仓库）：
+
+**macOS / Linux**：
+```bash
+curl -fsSL https://raw.githubusercontent.com/dreamor/atlas-cli/main/scripts/install.sh | bash
+```
+
+**Windows（PowerShell 5.1+）**：
+```powershell
+iwr -useb https://raw.githubusercontent.com/dreamor/atlas-cli/main/scripts/install.ps1 | iex
+```
+
+两条命令都会调起 `bootstrap` 脚本，幂等地装齐 atlas 二进制 + Node ≥ 20 + playwright + chromium。所有环境变量（`ATLAS_HOME`、`ATLAS_BOOTSTRAP_YES`、`ATLAS_SKIP_PLAYWRIGHT`、`NODE_MIRROR`、`PLAYWRIGHT_DOWNLOAD_HOST` 等）共享。
+
+## Release Process
+
+打 tag 触发 CI 跨平台编译并发布到 GitHub Release。
+
+```bash
+# 1. 在 main 上确认本地编译 + 测试通过
+git checkout main && git pull
+npm run build:bun:all && npm test
+
+# 2. 决定版本号，更新 package.json 的 version 字段（手动或 npm version）
+# 3. 提交、打 tag、推送
+git commit -am "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push && git push origin vX.Y.Z
+
+# 4. 等 CI 跑完（约 5–10 分钟），验证 5 个二进制都上传了
+gh release view vX.Y.Z
+
+# 5. 烟雾测试：直接下载 release 二进制
+curl -fsSL https://github.com/dreamor/atlas-cli/releases/latest/download/atlas-darwin-arm64 -o /tmp/atlas
+file /tmp/atlas  # 期望: Mach-O 64-bit executable arm64
+```
+
+CI 配置在 `.github/workflows/release.yml`，matrix 同时构建 5 个 target：
+`darwin-arm64`、`darwin-x64`、`linux-x64`、`linux-arm64`、`windows-x64`（产物为 `.exe`）。
+
+也可手动触发：GitHub → Actions → "Release Binaries" → "Run workflow"（仅产出 artifact，不上传 Release，用于回归验证）。
+
 ## 后续路线
 
 - 在 GitHub Release 流程里加 codesign / notarize（macOS）
