@@ -26,15 +26,28 @@ mpLine 场景（`/projects/mpLine/list?projectId=<id>`）。通过
 
 ## 前置条件
 
-1. 仓库 checkout 到 `/Users/scottwang/Documents/Workspace/Atlas-Cli`
-2. 运行 `npm install`，然后 `npm run build`（输出到 `dist/`）
-3. 通过 `atlas auth login` 完成一次性 SSO + 2FA — 会话保存在
-   macOS Keychain（服务 `atlas`，账户 `default`），直到 BUC
-   令牌过期
-4. 有效的斑马云图项目 ID（如 `2548`）— 可以通过 `--project-id`
-   或 `BANMA_PROJECT_ID` 环境变量指定
+每次使用此 skill 前，按顺序执行：
 
-任一检查失败则中止并报告具体缺失的前置条件。
+1. **运行 bootstrap（幂等，已就绪时秒退）**
+   ```bash
+   bash scripts/bootstrap.sh
+   ```
+   该脚本会确保 atlas 二进制、Node ≥ 20、playwright + chromium 都已安装到
+   `$ATLAS_HOME`（默认 `~/.atlas`）。**首次运行**会下载约 260 MB
+   并提示确认；非交互场景设 `ATLAS_BOOTSTRAP_YES=1`。
+   - 仅做只读命令（list / month / summary / export）可设 `ATLAS_SKIP_PLAYWRIGHT=1` 跳过浏览器依赖。
+   - 已 clone 仓库且 `npm install` 完成的开发环境会被自动识别，bootstrap 可跳过。
+
+2. **验证会话**：`atlas auth status`
+   - 无会话或失效 → 运行 `atlas auth login`（会打开浏览器，Agent 无法解决 2FA，
+     需要让用户介入）。
+   - 会话保存在 macOS Keychain（服务 `atlas`，账户 `default`）或文件兜底，
+     直到 BUC 令牌过期。
+
+3. **有效的项目 ID**（如 `2548`）— 通过 `--project-id` 参数或 `BANMA_PROJECT_ID`
+   环境变量指定。
+
+任一检查失败则中止并报告具体缺失的前置条件，**不要跳过 bootstrap**。
 
 ## 安全约定
 
