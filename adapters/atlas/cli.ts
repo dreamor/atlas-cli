@@ -9,6 +9,8 @@ import { importCmd } from './commands/import.js';
 import { monthCmd } from './commands/month.js';
 import { summaryCmd } from './commands/summary.js';
 import { daemonCmd } from './daemon/index.js';
+import { resolveCmd } from './commands/resolve.js';
+import { schemaCommandsCmd, schemaExportCmd } from './commands/schema.js';
 import {
   BanmaApiError,
   ConfigError,
@@ -239,6 +241,48 @@ export function buildProgram(): Command {
     .action(async (opts) => {
       try {
         await daemonCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  program
+    .command('resolve <kind> <query>')
+    .description(
+      '将名称/子串解析为候选 ID（kind: project|department|mp-type|line-plan-type|src-type|area-code）',
+    )
+    .option('--json', '输出 JSON 信封')
+    .option('--refresh', '刷新字典/部门/项目缓存')
+    .option('--limit <n>', '最多返回 N 个候选（默认 20）')
+    .action(async (kind: string, query: string, opts) => {
+      try {
+        await resolveCmd(kind, query, opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  const schema = program.command('schema').description('CLI 自省 / 字段字典导出');
+  schema
+    .command('export')
+    .description('导出字典 + 部门树，供 skill 缓存对照')
+    .option('--out <path>', '同时写入文件路径')
+    .option('--refresh', '刷新缓存')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await schemaExportCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+  schema
+    .command('commands')
+    .description('列出所有命令的参数 schema')
+    .option('--json', '输出 JSON 信封')
+    .action((opts) => {
+      try {
+        schemaCommandsCmd(program, opts);
       } catch (e) {
         handleError(e);
       }
