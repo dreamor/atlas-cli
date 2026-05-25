@@ -15,8 +15,15 @@ import {
   NotImplementedError,
   SessionExpiredError,
 } from './util/errors.js';
+import { isJsonMode, printError } from './util/output.js';
 
 function handleError(err: unknown): never {
+  // In JSON mode, route to stdout as a uniform envelope and exit with the
+  // appropriate code. Human (stderr) text is suppressed.
+  if (isJsonMode()) {
+    printError(err, { json: true });
+    process.exit(exitCodeFor(err));
+  }
   if (err instanceof SessionExpiredError) {
     // eslint-disable-next-line no-console
     console.error(err.message);
@@ -42,6 +49,14 @@ function handleError(err: unknown): never {
   process.exit(1);
 }
 
+function exitCodeFor(err: unknown): number {
+  if (err instanceof SessionExpiredError) return 2;
+  if (err instanceof BanmaApiError) return 3;
+  if (err instanceof ConfigError) return 64;
+  if (err instanceof NotImplementedError) return 64;
+  return 1;
+}
+
 function addProjectOptions(cmd: Command): Command {
   return cmd
     .option(
@@ -59,7 +74,16 @@ export function buildProgram(): Command {
   program
     .name('atlas')
     .description('Atlas CLI - 斑马云图人力基线管理工具')
-    .showHelpAfterError();
+    .option('--json', '以 JSON 信封输出（也可用环境变量 ATLAS_OUTPUT=json）')
+    .showHelpAfterError()
+    .hook('preAction', (thisCommand) => {
+      // Propagate top-level --json down to ATLAS_OUTPUT so deep helpers can
+      // see it without threading the flag through every call site.
+      const opts = thisCommand.opts() as { json?: boolean };
+      if (opts.json === true && process.env.ATLAS_OUTPUT === undefined) {
+        process.env.ATLAS_OUTPUT = 'json';
+      }
+    });
 
   const auth = program.command('auth').description('SSO 会话管理');
   auth
@@ -160,6 +184,7 @@ export function buildProgram(): Command {
     .requiredOption('--format <fmt>', 'csv | json | parquet')
     .requiredOption('--out <path>', '输出文件路径')
     .option('--since <iso>', '仅导出指定时间后修改的条目（ISO 时间戳）')
+    .option('--json', '输出 JSON 信封（结果摘要）')
     .action(async (opts) => {
       try {
         if (!['csv', 'json', 'parquet'].includes(opts.format)) {

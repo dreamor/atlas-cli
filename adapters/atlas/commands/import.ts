@@ -6,6 +6,7 @@ import { ConfigError, NotImplementedError } from '../util/errors.js';
 import { loadSession, buildCookieHeader, type Session } from '../auth/session.js';
 import { BASE_URL, DEFAULT_USER_AGENT } from '../util/paths.js';
 import { SessionExpiredError } from '../util/errors.js';
+import { printResult } from '../util/output.js';
 
 export type ImportTarget = 'lineplan' | 'month';
 
@@ -143,31 +144,32 @@ async function postMultipart(
 }
 
 function emit(outcome: ImportOutcome, opts: ImportCmdOpts): void {
-  if (opts.json) {
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify(outcome, null, 2));
-    return;
-  }
   const s = outcome.summary;
   const projLine = outcome.projectName
     ? `projectId: ${outcome.projectId} ("${outcome.projectName}")`
     : `projectId: ${outcome.projectId}`;
-  // eslint-disable-next-line no-console
-  console.log(
-    [
-      `mode: ${outcome.mode}`,
-      projLine,
-      `file: ${outcome.file}`,
-      `sheet: ${s.sheetName}`,
-      `data rows: ${s.rowCount}`,
-      `headers (${s.headerRow.length}): ${s.headerRow.join(', ') || '(none)'}`,
-      s.missingColumns.length > 0
-        ? `missing columns: ${s.missingColumns.join(', ')}`
-        : 'missing columns: (none)',
-      s.extraColumns.length > 0
-        ? `extra columns: ${s.extraColumns.join(', ')}`
-        : 'extra columns: (none)',
-      outcome.mode === 'dry-run' ? 'Re-run with --apply to upload.' : 'Upload complete.',
-    ].join('\n'),
-  );
+  printResult(outcome, {
+    json: opts.json,
+    meta: { mode: outcome.mode },
+    renderHuman: () => {
+      // eslint-disable-next-line no-console
+      console.log(
+        [
+          `mode: ${outcome.mode}`,
+          projLine,
+          `file: ${outcome.file}`,
+          `sheet: ${s.sheetName}`,
+          `data rows: ${s.rowCount}`,
+          `headers (${s.headerRow.length}): ${s.headerRow.join(', ') || '(none)'}`,
+          s.missingColumns.length > 0
+            ? `missing columns: ${s.missingColumns.join(', ')}`
+            : 'missing columns: (none)',
+          s.extraColumns.length > 0
+            ? `extra columns: ${s.extraColumns.join(', ')}`
+            : 'extra columns: (none)',
+          outcome.mode === 'dry-run' ? 'Re-run with --apply to upload.' : 'Upload complete.',
+        ].join('\n'),
+      );
+    },
+  });
 }

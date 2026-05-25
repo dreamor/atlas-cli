@@ -4,6 +4,7 @@ import { loadDepartments } from '../dict/cache.js';
 import { resolveDept } from '../dict/resolve.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
 import { ConfigError } from '../util/errors.js';
+import { printResult } from '../util/output.js';
 import {
   applyRowFilter,
   dropAllZero,
@@ -67,41 +68,40 @@ export async function monthCmd(opts: MonthCmdOpts): Promise<void> {
     pivot = dropAllZero(pivot);
   }
 
-  if (opts.json) {
-    const out = pivot.rows.map((r) => ({
-      id: r.id,
-      departmentId: r.departmentId,
-      departmentName: r.departmentName,
-      role: r.role,
-      areaCode: r.areaCode,
-      mpType: r.mpType,
-      remark: r.remark,
-      months: r.months,
-    }));
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify(
-        {
-          projectId,
-          projectName: resolved.name,
-          total: total ?? items.length,
-          monthColumns: pivot.monthColumns,
-          rows: out,
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(renderPivotTable(pivot));
   const projLabel = resolved.name
     ? `project "${resolved.name}" (${projectId})`
     : `project ${projectId}`;
-  // eslint-disable-next-line no-console
-  console.log(
-    `\n${pivot.rows.length} row(s) across ${pivot.monthColumns.length} month(s) in ${projLabel}`,
+
+  const out = pivot.rows.map((r) => ({
+    id: r.id,
+    departmentId: r.departmentId,
+    departmentName: r.departmentName,
+    role: r.role,
+    areaCode: r.areaCode,
+    mpType: r.mpType,
+    remark: r.remark,
+    months: r.months,
+  }));
+
+  printResult(
+    {
+      projectId,
+      projectName: resolved.name ?? null,
+      total: total ?? items.length,
+      monthColumns: pivot.monthColumns,
+      rows: out,
+    },
+    {
+      json: opts.json,
+      meta: { rows: pivot.rows.length, months: pivot.monthColumns.length },
+      renderHuman: () => {
+        // eslint-disable-next-line no-console
+        console.log(renderPivotTable(pivot));
+        // eslint-disable-next-line no-console
+        console.log(
+          `\n${pivot.rows.length} row(s) across ${pivot.monthColumns.length} month(s) in ${projLabel}`,
+        );
+      },
+    },
   );
 }

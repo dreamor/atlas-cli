@@ -4,6 +4,7 @@ import { loadDepartments } from '../dict/cache.js';
 import { resolveDept } from '../dict/resolve.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
 import { ConfigError } from '../util/errors.js';
+import { printResult } from '../util/output.js';
 import {
   renderSummaryTable,
   summarizeMonths,
@@ -62,30 +63,26 @@ export async function summaryCmd(opts: SummaryCmdOpts): Promise<void> {
     resolveDepartment,
   });
 
-  if (opts.json) {
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify(
-        {
-          projectId,
-          projectName: resolved.name,
-          by: axis,
-          entries,
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(renderSummaryTable(axis, entries));
   const projLabel = resolved.name
     ? `project "${resolved.name}" (${projectId})`
     : `project ${projectId}`;
-  // eslint-disable-next-line no-console
-  console.log(
-    `\n${entries.length} bucket(s) by ${axis} in ${projLabel}`,
+
+  printResult(
+    {
+      projectId,
+      projectName: resolved.name ?? null,
+      by: axis,
+      entries,
+    },
+    {
+      json: opts.json,
+      meta: { buckets: entries.length },
+      renderHuman: () => {
+        // eslint-disable-next-line no-console
+        console.log(renderSummaryTable(axis, entries));
+        // eslint-disable-next-line no-console
+        console.log(`\n${entries.length} bucket(s) by ${axis} in ${projLabel}`);
+      },
+    },
   );
 }

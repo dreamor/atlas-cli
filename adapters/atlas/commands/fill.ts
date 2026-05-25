@@ -16,6 +16,7 @@ import {
 import { callClaude, getAnthropicKey } from './_llm.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
 import { ConfigError } from '../util/errors.js';
+import { printResult } from '../util/output.js';
 import type { LinePlan, LinePlanMonth } from '../schema/models.js';
 
 const DEFAULT_LLM_MODEL = 'claude-3-5-sonnet-latest';
@@ -157,8 +158,16 @@ async function runApply(
     );
   }
   if (parsed.updates.length === 0) {
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ applied: 0, message: 'No staged updates to apply.' }, null, 2));
+    printResult(
+      { applied: 0, message: 'No staged updates to apply.' },
+      {
+        json: opts.json,
+        renderHuman: () => {
+          // eslint-disable-next-line no-console
+          console.log('No staged updates to apply.');
+        },
+      },
+    );
     return;
   }
 
@@ -242,28 +251,29 @@ export function parseStageFile(raw: string): StageFile {
 }
 
 function emitOutcome(outcome: FillOutcome, opts: FillCmdOpts): void {
-  if (opts.json) {
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify(outcome, null, 2));
-    return;
-  }
-  // eslint-disable-next-line no-console
-  console.log(
-    [
-      `mode: ${outcome.mode}`,
-      `target: ${outcome.target}`,
-      `projectId: ${outcome.projectId}`,
-      `rows considered: ${outcome.rowsConsidered}`,
-      `rows staged: ${outcome.rowsStaged}`,
-      `rows skipped: ${outcome.rowsSkipped}`,
-      `llm enabled: ${outcome.llmEnabled}`,
-      `stage: ${outcome.stagePath}`,
-      ...(outcome.applied !== undefined ? [`applied: ${outcome.applied}`] : []),
-      outcome.mode === 'dry-run' ? 'Re-run with --apply to commit updates.' : '',
-    ]
-      .filter(Boolean)
-      .join('\n'),
-  );
+  printResult(outcome, {
+    json: opts.json,
+    meta: { mode: outcome.mode, target: outcome.target },
+    renderHuman: () => {
+      // eslint-disable-next-line no-console
+      console.log(
+        [
+          `mode: ${outcome.mode}`,
+          `target: ${outcome.target}`,
+          `projectId: ${outcome.projectId}`,
+          `rows considered: ${outcome.rowsConsidered}`,
+          `rows staged: ${outcome.rowsStaged}`,
+          `rows skipped: ${outcome.rowsSkipped}`,
+          `llm enabled: ${outcome.llmEnabled}`,
+          `stage: ${outcome.stagePath}`,
+          ...(outcome.applied !== undefined ? [`applied: ${outcome.applied}`] : []),
+          outcome.mode === 'dry-run' ? 'Re-run with --apply to commit updates.' : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    },
+  });
 }
 
 // Exported for tests

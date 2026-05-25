@@ -3,6 +3,7 @@ import { fetchLinePlans } from './_lineplans.js';
 import { decorateLinePlan, renderTable } from './_render.js';
 import { loadDepartments, loadDictionary } from '../dict/cache.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
+import { printResult } from '../util/output.js';
 
 export interface ListCmdOpts {
   readonly projectId?: string;
@@ -28,34 +29,32 @@ export async function listCmd(opts: ListCmdOpts): Promise<void> {
     loadDepartments(client),
   ]);
 
-  if (opts.json) {
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify(
-        {
-          projectId,
-          projectName: resolved.name,
-          total: total ?? items.length,
-          hasMore: hasMore ?? false,
-          items,
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-
   const rows = items.map((it) => decorateLinePlan(it, dict, depts));
-  // eslint-disable-next-line no-console
-  console.log(renderTable(rows));
   const projLabel = resolved.name
     ? `project "${resolved.name}" (${projectId})`
     : `project ${projectId}`;
-  // eslint-disable-next-line no-console
-  console.log(
-    `\n${items.length} item(s)${
-      total !== undefined && total !== items.length ? ` (of ${total})` : ''
-    } in ${projLabel}`,
+
+  printResult(
+    {
+      projectId,
+      projectName: resolved.name ?? null,
+      total: total ?? items.length,
+      hasMore: hasMore ?? false,
+      items,
+    },
+    {
+      json: opts.json,
+      meta: { count: items.length },
+      renderHuman: () => {
+        // eslint-disable-next-line no-console
+        console.log(renderTable(rows));
+        // eslint-disable-next-line no-console
+        console.log(
+          `\n${items.length} item(s)${
+            total !== undefined && total !== items.length ? ` (of ${total})` : ''
+          } in ${projLabel}`,
+        );
+      },
+    },
   );
 }

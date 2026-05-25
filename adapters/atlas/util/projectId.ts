@@ -63,11 +63,24 @@ export async function resolveProjectIdAsync(
     throw new ConfigError(
       `--project-id "${trimmed}" matched ${result.matches.length} projects. ` +
         `Pass a more specific name or the numeric id:\n${lines}`,
+      {
+        code: 'AMBIGUOUS_PROJECT',
+        hint: 'Refine the query or pass the numeric project id.',
+        details: {
+          query: trimmed,
+          candidates: result.matches.map((m) => ({ id: m.id, name: m.name })),
+        },
+      },
     );
   }
 
   throw new ConfigError(
     `--project-id "${trimmed}" did not match any project name or id. ` +
       'Try `--refresh-projects` to refetch the catalog.',
+    {
+      code: 'PROJECT_NOT_FOUND',
+      hint: 'Run `atlas list` with --refresh-projects or use the numeric id.',
+      details: { query: trimmed },
+    },
   );
 }

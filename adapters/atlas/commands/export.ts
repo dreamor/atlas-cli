@@ -4,6 +4,7 @@ import { getClientOrExit } from './_client.js';
 import { fetchLinePlans } from './_lineplans.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
 import { NotImplementedError } from '../util/errors.js';
+import { printResult } from '../util/output.js';
 import type { LinePlan } from '../schema/models.js';
 
 export interface ExportCmdOpts {
@@ -12,6 +13,7 @@ export interface ExportCmdOpts {
   readonly out: string;
   readonly since?: string;
   readonly refreshProjects?: boolean;
+  readonly json?: boolean;
 }
 
 export async function exportCmd(opts: ExportCmdOpts): Promise<void> {
@@ -42,11 +44,26 @@ export async function exportCmd(opts: ExportCmdOpts): Promise<void> {
       'parquet export not implemented in spike. Use --format csv or --format json.',
     );
   }
-  // eslint-disable-next-line no-console
-  console.log(
-    `Wrote ${filtered.length} item(s) to ${opts.out} (${opts.format})${
-      resolved.name ? ` from project "${resolved.name}" (${projectId})` : ''
-    }.`,
+
+  printResult(
+    {
+      projectId,
+      projectName: resolved.name ?? null,
+      out: opts.out,
+      format: opts.format,
+      count: filtered.length,
+    },
+    {
+      json: opts.json,
+      renderHuman: () => {
+        // eslint-disable-next-line no-console
+        console.log(
+          `Wrote ${filtered.length} item(s) to ${opts.out} (${opts.format})${
+            resolved.name ? ` from project "${resolved.name}" (${projectId})` : ''
+          }.`,
+        );
+      },
+    },
   );
 }
 
