@@ -17,6 +17,7 @@ import { callClaude, getAnthropicKey } from './_llm.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
 import { ConfigError } from '../util/errors.js';
 import { printResult } from '../util/output.js';
+import { newToken, writeManifest } from '../util/undo.js';
 import type { LinePlan, LinePlanMonth } from '../schema/models.js';
 
 const DEFAULT_LLM_MODEL = 'claude-3-5-sonnet-latest';
@@ -47,6 +48,7 @@ interface FillOutcome {
   readonly applied?: number;
   readonly serverResponse?: unknown;
   readonly updates: ReadonlyArray<StagedUpdate>;
+  readonly undoToken?: string;
 }
 
 export function parseFillTarget(raw: string | undefined): FillTarget {
@@ -176,6 +178,13 @@ async function runApply(
   const save = target === 'month' ? saveLinePlanMonths : saveLinePlans;
   const { count, raw: serverResponse } = await save(client, { projectId }, payload);
 
+  const undoToken = await maybeWriteUndoManifest(
+    projectId,
+    target,
+    parsed.updates,
+    serverResponse,
+  );
+
   const result: FillOutcome = {
     projectId,
     mode: 'apply',
@@ -188,8 +197,38 @@ async function runApply(
     applied: count,
     serverResponse,
     updates: parsed.updates,
+    ...(undoToken ? { undoToken } : {}),
   };
   emitOutcome(result, opts);
+}
+
+async function maybeWriteUndoManifest(
+  projectId: string,
+  target: FillTarget,
+  updates: ReadonlyArray<StagedUpdate>,
+  serverResponse: unknown,
+): Promise<string | undefined> {
+  // We need every staged update to carry an `original` snapshot. Stage files
+  // written before P2 won't, so skip the manifest in that case rather than
+  // fabricate a partial one.
+  const before: Array<Record<string, unknown>> = [];
+  for (const u of updates) {
+    if (!u.original) return undefined;
+    before.push(u.original);
+  }
+  const after = updates.map((u) => u.update);
+  const token = newToken('fill', projectId);
+  await writeManifest({
+    token,
+    command: 'fill',
+    target,
+    projectId,
+    timestamp: new Date().toISOString(),
+    before,
+    after,
+    serverResponse,
+  });
+  return token;
 }
 
 async function callLlmForRow(
@@ -267,6 +306,7 @@ function emitOutcome(outcome: FillOutcome, opts: FillCmdOpts): void {
           `llm enabled: ${outcome.llmEnabled}`,
           `stage: ${outcome.stagePath}`,
           ...(outcome.applied !== undefined ? [`applied: ${outcome.applied}`] : []),
+          ...(outcome.undoToken ? [`undo token: ${outcome.undoToken}`] : []),
           outcome.mode === 'dry-run' ? 'Re-run with --apply to commit updates.' : '',
         ]
           .filter(Boolean)

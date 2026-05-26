@@ -11,6 +11,7 @@ import { summaryCmd } from './commands/summary.js';
 import { daemonCmd } from './daemon/index.js';
 import { resolveCmd } from './commands/resolve.js';
 import { schemaCommandsCmd, schemaExportCmd } from './commands/schema.js';
+import { undoCmd } from './commands/undo.js';
 import {
   BanmaApiError,
   ConfigError,
@@ -59,6 +60,53 @@ function exitCodeFor(err: unknown): number {
   return 1;
 }
 
+interface DescribeOptionEntry {
+  flags: string;
+  description: string;
+  required: boolean;
+  default?: unknown;
+}
+
+interface DescribeArgEntry {
+  name: string;
+  required: boolean;
+}
+
+interface DescribePayload {
+  command: string;
+  description: string;
+  options: DescribeOptionEntry[];
+  args: DescribeArgEntry[];
+  subcommands: string[];
+}
+
+function emitDescribe(cmd: Command): void {
+  const path: string[] = [];
+  let cursor: Command | null = cmd;
+  while (cursor && cursor.name() !== 'atlas') {
+    path.unshift(cursor.name());
+    cursor = cursor.parent;
+  }
+  const payload: DescribePayload = {
+    command: ['atlas', ...path].join(' '),
+    description: cmd.description() ?? '',
+    options: cmd.options.map((o) => ({
+      flags: o.flags,
+      description: o.description ?? '',
+      required: o.required ?? false,
+      ...(o.defaultValue !== undefined ? { default: o.defaultValue } : {}),
+    })),
+    args:
+      cmd.registeredArguments?.map((a) => ({
+        name: a.name(),
+        required: a.required,
+      })) ?? [],
+    subcommands: cmd.commands.map((c) => c.name()),
+  };
+  const envelope = { ok: true, data: payload };
+  process.stdout.write(JSON.stringify(envelope) + '\n');
+}
+
 function addProjectOptions(cmd: Command): Command {
   return cmd
     .option(
@@ -77,13 +125,21 @@ export function buildProgram(): Command {
     .name('atlas')
     .description('Atlas CLI - 斑马云图人力基线管理工具')
     .option('--json', '以 JSON 信封输出（也可用环境变量 ATLAS_OUTPUT=json）')
+    .option('--describe', '不执行命令，仅输出该命令的参数 schema（agent 自省用）')
     .showHelpAfterError()
-    .hook('preAction', (thisCommand) => {
+    .hook('preAction', (thisCommand, actionCommand) => {
       // Propagate top-level --json down to ATLAS_OUTPUT so deep helpers can
       // see it without threading the flag through every call site.
-      const opts = thisCommand.opts() as { json?: boolean };
+      const opts = thisCommand.opts() as { json?: boolean; describe?: boolean };
       if (opts.json === true && process.env.ATLAS_OUTPUT === undefined) {
         process.env.ATLAS_OUTPUT = 'json';
+      }
+      // --describe short-circuits the action: emit a JSON description of the
+      // resolved subcommand and exit successfully. Runs after global hooks
+      // but before the action callback.
+      if (opts.describe === true) {
+        emitDescribe(actionCommand);
+        process.exit(0);
       }
     });
 
@@ -283,6 +339,20 @@ export function buildProgram(): Command {
     .action((opts) => {
       try {
         schemaCommandsCmd(program, opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  program
+    .command('undo [token]')
+    .description('回滚先前的 fill --apply 操作（基于 ~/.cache/atlas/undo 下的 manifest）')
+    .option('--list', '列出最近的 undo manifest')
+    .option('--limit <n>', '配合 --list 使用，最多返回 N 条（默认 30）')
+    .option('--json', '输出 JSON 信封')
+    .action(async (token: string | undefined, opts) => {
+      try {
+        await undoCmd(token, opts);
       } catch (e) {
         handleError(e);
       }

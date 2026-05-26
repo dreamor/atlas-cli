@@ -26,6 +26,12 @@ export interface StagedUpdate {
   readonly source: 'template' | 'llm';
   readonly update: Record<string, unknown>;
   readonly rendered: string;
+  /**
+   * Snapshot of the row as it existed at stage time. Persisted into the stage
+   * file so `--apply` can write a faithful undo manifest without a second
+   * fetch. Optional for backward-compat with stage files written before P2.
+   */
+  readonly original?: Record<string, unknown>;
 }
 
 /**
@@ -49,7 +55,8 @@ export function parseRenderedJson(rendered: string): Record<string, unknown> | n
 
 /**
  * Build a staged update by rendering the template, then merging an optional
- * LLM-derived patch. Always preserves the row id.
+ * LLM-derived patch. Always preserves the row id and snapshots the original
+ * row so the apply step can write an undo manifest.
  */
 export function buildStagedUpdate(
   row: LinePlan,
@@ -68,5 +75,6 @@ export function buildStagedUpdate(
     source: llmPatch ? 'llm' : 'template',
     update,
     rendered,
+    original: row as Record<string, unknown>,
   };
 }
