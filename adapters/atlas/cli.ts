@@ -12,6 +12,8 @@ import { daemonCmd } from './daemon/index.js';
 import { resolveCmd } from './commands/resolve.js';
 import { schemaCommandsCmd, schemaExportCmd } from './commands/schema.js';
 import { undoCmd } from './commands/undo.js';
+import { execCmd } from './commands/exec.js';
+import { suggestCmd } from './commands/suggest.js';
 import {
   BanmaApiError,
   ConfigError,
@@ -358,11 +360,41 @@ export function buildProgram(): Command {
       }
     });
 
+  program
+    .command('exec')
+    .description('按 plan-file 顺序执行多条命令（agent 批处理用）')
+    .requiredOption('--plan-file <path>', 'JSON 计划文件路径，schema: {steps: [{name?, cmd, args?}], stopOnError?}')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await execCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  program
+    .command('suggest <query...>')
+    .description('将自然语言查询翻译为候选 atlas 命令（纯规则，不调 LLM）')
+    .option('--json', '输出 JSON 信封')
+    .action((tokens: string[], opts) => {
+      try {
+        suggestCmd(tokens.join(' '), opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
   return program;
 }
 
 // Run whenever this module is the entry point — including via bin symlink.
 // (argv[1] may be a symlink target like /opt/homebrew/bin/atlas that
 // neither ends in .js nor matches import.meta.url.)
-const program = buildProgram();
-program.parseAsync(process.argv).catch(handleError);
+//
+// `atlas exec` re-imports this module to dispatch sub-steps in-process; in
+// that path it sets ATLAS_SKIP_AUTORUN=1 to prevent the second auto-run.
+if (process.env.ATLAS_SKIP_AUTORUN !== '1') {
+  const program = buildProgram();
+  program.parseAsync(process.argv).catch(handleError);
+}
