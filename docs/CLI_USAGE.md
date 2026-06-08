@@ -333,12 +333,21 @@ plan-file JSON 格式：
 ```json
 {
   "steps": [
-    { "name": "step1", "cmd": "atlas", "args": ["list", "--json"] },
-    { "name": "step2", "cmd": "atlas", "args": ["summary", "--by", "department"] }
+    { "name": "step1", "cmd": "list", "args": { "--json": true } },
+    { "name": "step2", "cmd": "summary", "args": { "--by": "department" } }
   ],
   "stopOnError": true
 }
 ```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | `string` (可选) | 步骤显示名称，默认取 `cmd` 值 |
+| `cmd` | `string` | 子命令名（如 `list`、`summary`、`month`、`export` 等），不带 `atlas` 前缀 |
+| `args` | `object` (可选) | 键值对参数，key 需带 `--` 前缀（如 `"--json"`），boolean `true` 表示仅加 flag，`false` 跳过，string/number 值会作为参数跟在 flag 后 |
+| `stopOnError` | `boolean` (可选) | 某步失败时是否停止，默认 `true` |
 
 ---
 
