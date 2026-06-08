@@ -18,6 +18,7 @@ import {
   renderActualSummaryTable,
   type ActualFilter,
   type ActualStatusFilter,
+  type ActualSummaryAxis,
 } from './_actual_logic.js';
 import { resolveProjectIdAsync } from '../util/projectId.js';
 import { ConfigError } from '../util/errors.js';
@@ -33,6 +34,7 @@ export interface ActualCmdOpts {
   readonly status?: string; // 'pending' | 'approved' | 'all'
   readonly from?: string;
   readonly to?: string;
+  readonly by?: string;           // 'month' | 'department' | 'role'
   readonly refreshProjects?: boolean;
 }
 
@@ -53,6 +55,16 @@ function parseStatusFilter(raw: string | undefined): ActualStatusFilter {
   throw new ConfigError(
     `--status must be pending|approved|all (got "${raw}")`,
   );
+}
+
+const VALID_AXES: ReadonlySet<ActualSummaryAxis> = new Set(['month', 'department', 'role']);
+
+function parseAxis(raw: string | undefined): ActualSummaryAxis {
+  const v = (raw ?? 'month') as ActualSummaryAxis;
+  if (!VALID_AXES.has(v)) {
+    throw new ConfigError(`--by must be one of month|department|role (got "${raw}")`);
+  }
+  return v;
 }
 
 function getCurrentMonth(): string {
@@ -131,6 +143,46 @@ export async function actualCmd(opts: ActualCmdOpts): Promise<void> {
   const filtered = filterActualRows(allRows, filter);
 
   const monthFilter = { from: opts.from, to: opts.to };
+  // If --by is specified, produce a summary view instead of the pivot table
+  const axis = opts.by ? parseAxis(opts.by) : undefined;
+
+  if (axis) {
+    const summary = summarizeActual(filtered, axis, monthFilter);
+    const projLabel = resolved.name
+      ? `project "${resolved.name}" (${projectId})`
+      : `project ${projectId}`;
+
+    printResult(
+      {
+        projectId,
+        projectName: resolved.name ?? null,
+        month,
+        by: axis,
+        filter: {
+          status: statusFilter,
+          department: opts.department ?? null,
+          role: opts.role ?? null,
+          staffName: opts.staffName ?? null,
+          from: opts.from ?? null,
+          to: opts.to ?? null,
+        },
+        entries: summary,
+      },
+      {
+        json: opts.json,
+        meta: { rows: summary.length },
+        renderHuman: () => {
+          // eslint-disable-next-line no-console
+          console.log(renderActualSummaryTable(axis, summary));
+          // eslint-disable-next-line no-console
+          console.log(`\n${summary.length} bucket(s) by ${axis} in ${projLabel} (${month})`);
+        },
+      },
+    );
+    return;
+  }
+
+  // Default: pivot view (per-staff, per-week)
   const pivot = pivotActualRows(filtered, monthFilter);
 
   const projLabel = resolved.name

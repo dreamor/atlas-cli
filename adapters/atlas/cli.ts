@@ -9,6 +9,7 @@ import { importCmd } from './commands/import.js';
 import { monthCmd } from './commands/month.js';
 import { summaryCmd } from './commands/summary.js';
 import { actualCmd } from './commands/actual.js';
+import { compareCmd } from './commands/compare.js';
 import { daemonCmd } from './daemon/index.js';
 import { resolveCmd } from './commands/resolve.js';
 import { schemaCommandsCmd, schemaExportCmd } from './commands/schema.js';
@@ -246,6 +247,13 @@ export function buildProgram(): Command {
     .requiredOption('--format <fmt>', 'csv | json | parquet')
     .requiredOption('--out <path>', '输出文件路径')
     .option('--since <iso>', '仅导出指定时间后修改的条目（ISO 时间戳）')
+    .option('--target <target>', 'baseline（默认）| actual — 导出目标数据类型', 'baseline')
+    .option('--by <axis>', 'month | department | role（仅 --target actual 时有效）')
+    .option('--status <status>', 'pending | approved | all（仅 --target actual 时有效）', 'all')
+    .option('--department <name>', '按部门筛选（仅 --target actual 时有效）')
+    .option('--role <name>', '按角色筛选（仅 --target actual 时有效）')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM）')
     .option('--json', '输出 JSON 信封（结果摘要）')
     .action(async (opts) => {
       try {
@@ -389,6 +397,31 @@ export function buildProgram(): Command {
 
   addProjectOptions(
     program
+      .command('compare')
+      .description('Compare baseline (计划) vs actual (实际) manpower'),
+  )
+    .option('--by <axis>', 'month | department | role', 'month')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，优先级高于 from/to 用于实际数据 API）')
+    .option('--department <name>', '按部门名称/ID 筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
+    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
+    .option('--threshold <n>', '差异绝对值阈值（小时），低于此值不标记', '0')
+    .option('--flag-overrun', '用 ⚠️ 标记实际 > 基线的情况')
+    .option('--page <n>', '页码（从 1 开始）')
+    .option('--page-size <n>', '每页条目数（大于 0 时启用分页）')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await compareCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  addProjectOptions(
+    program
       .command('actual')
       .description('实际投入工时（按周显示，区别于 month 基线数据）'),
   )
@@ -399,6 +432,7 @@ export function buildProgram(): Command {
     .option('--staff-name <name>', '按姓名/工号筛选（子串，不区分大小写）')
     .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
     .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
+    .option('--by <axis>', 'month | department | role — 汇总维度（设置后输出汇总表而非明细表）')
     .option('--json', '输出 JSON 信封')
     .action(async (opts) => {
       try {
