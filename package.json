@@ -12,6 +12,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit --pretty false",
+    "lint:watch": "tsc --noEmit --pretty false --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "node ./dist/adapters/atlas/cli.js --help",
