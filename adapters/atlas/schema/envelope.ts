@@ -10,7 +10,7 @@ import { z } from 'zod';
  */
 export const EnvelopeSchema = z
   .object({
-    status: z.number().optional(),
+    status: z.union([z.number(), z.string()]).optional(),
     code: z.number().optional(),
     errCode: z.union([z.string(), z.number()]).optional().nullable(),
     errorMsg: z.string().optional().nullable(),

@@ -1,4 +1,5 @@
 import { ConfigError } from './errors.js';
+import { readLink } from './link.js';
 import {
   loadProjectCatalog,
   resolveProjectIdFromName,
@@ -8,6 +9,8 @@ import type { BanmaClient } from '../http/client.js';
 export interface ResolvedProjectId {
   readonly id: string;
   readonly name?: string;
+  /** True when the id came from the persistent link, not a flag/env. */
+  readonly fromLink?: boolean;
 }
 
 /**
@@ -41,9 +44,21 @@ export async function resolveProjectIdAsync(
 ): Promise<ResolvedProjectId> {
   const raw = cliFlag ?? process.env.BANMA_PROJECT_ID ?? '';
   const trimmed = raw.trim();
+
   if (!trimmed) {
+    const link = await readLink();
+    if (link) {
+      return {
+        id: link.projectId,
+        ...(link.projectName !== undefined ? { name: link.projectName } : {}),
+        fromLink: true,
+      };
+    }
     throw new ConfigError(
-      '--project-id is required (or set BANMA_PROJECT_ID env var).',
+      '--project-id is required (or set BANMA_PROJECT_ID env var, or run `atlas link <project>`).',
+      {
+        hint: 'Pass --project-id, set BANMA_PROJECT_ID, or run `atlas link <project>` to pin one.',
+      },
     );
   }
 

@@ -18,5 +18,11 @@
     "exactOptionalPropertyTypes": false
   },
   "include": ["adapters/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "dist", ".opencli", ".playwright"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".opencli",
+    ".playwright",
+    "scripts/recon-*.ts"
+  ]
 }

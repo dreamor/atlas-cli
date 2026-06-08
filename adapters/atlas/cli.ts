@@ -8,12 +8,14 @@ import { fillCmd } from './commands/fill.js';
 import { importCmd } from './commands/import.js';
 import { monthCmd } from './commands/month.js';
 import { summaryCmd } from './commands/summary.js';
+import { actualCmd } from './commands/actual.js';
 import { daemonCmd } from './daemon/index.js';
 import { resolveCmd } from './commands/resolve.js';
 import { schemaCommandsCmd, schemaExportCmd } from './commands/schema.js';
 import { undoCmd } from './commands/undo.js';
 import { execCmd } from './commands/exec.js';
 import { suggestCmd } from './commands/suggest.js';
+import { linkCmd, linkStatusCmd, unlinkCmd } from './commands/link.js';
 import {
   BanmaApiError,
   ConfigError,
@@ -380,6 +382,56 @@ export function buildProgram(): Command {
     .action((tokens: string[], opts) => {
       try {
         suggestCmd(tokens.join(' '), opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  addProjectOptions(
+    program
+      .command('actual')
+      .description('实际投入工时（按周显示，区别于 month 基线数据）'),
+  )
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
+    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
+    .option('--department <name>', '按团队负责人/部门筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
+    .option('--staff-name <name>', '按姓名/工号筛选（子串，不区分大小写）')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await actualCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  program
+    .command('link [project]')
+    .description('绑定当前项目（精确名称/子串/数字ID）。不带参数时显示当前绑定状态')
+    .option('--json', '输出 JSON 信封')
+    .option('--refresh-projects', '解析 project 前重新获取项目目录缓存')
+    .action(async (project: string | undefined, opts) => {
+      try {
+        if (project === undefined) {
+          await linkStatusCmd(opts);
+        } else {
+          await linkCmd(project, opts);
+        }
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  program
+    .command('unlink')
+    .description('清除当前项目绑定')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await unlinkCmd(opts);
       } catch (e) {
         handleError(e);
       }
