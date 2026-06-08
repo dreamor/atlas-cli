@@ -1,16 +1,16 @@
-import { getClientOrExit } from './_client.js';
-import { fetchLinePlanMonths } from './_lineplans.js';
-import { loadDepartments } from '../dict/cache.js';
-import { resolveDept } from '../dict/resolve.js';
-import { resolveProjectIdAsync } from '../util/projectId.js';
-import { ConfigError } from '../util/errors.js';
-import { printResult } from '../util/output.js';
+import { getClientOrExit } from '../_client.js';
+import { fetchLinePlanMonths } from '../_lineplans.js';
+import { loadDepartments } from '../../dict/cache.js';
+import { resolveDept } from '../../dict/resolve.js';
+import { resolveProjectIdAsync } from '../../util/projectId.js';
+import { ConfigError } from '../../util/errors.js';
+import { printResult } from '../../util/output.js';
 import {
   renderSummaryTable,
   summarizeMonths,
   type DepartmentResolver,
   type SummaryAxis,
-} from './_month_logic.js';
+} from '../_month_logic.js';
 
 export interface SummaryCmdOpts {
   readonly projectId?: string;

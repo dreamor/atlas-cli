@@ -1,41 +1,35 @@
 /**
- * `atlas actual` — query actual manpower hours (实际投入工时).
+ * `atlas actual list` — actual manpower detail (per-staff, per-week pivot table).
  *
- * Unlike `atlas month` which shows baseline (计划) data, this command queries
- * the actual hours reported by staff, grouped by team and approval status.
- *
- * Data source: `/yuntu-service/yida/manpower/getProjMpConfirmDetail.json`
+ * This is the default detailed view showing actual hours per person per week.
  */
-import { getClientOrExit } from './_client.js';
-import { fetchManpowerConfirm, type ConfirmStatus } from './_manhours.js';
-import { loadDepartments } from '../dict/cache.js';
+import { getClientOrExit } from '../_client.js';
+import { fetchManpowerConfirm } from '../_manhours.js';
+import { resolveProjectIdAsync } from '../../util/projectId.js';
+import { ConfigError } from '../../util/errors.js';
+import { printResult } from '../../util/output.js';
 import {
   flattenManpowerTree,
   filterActualRows,
   pivotActualRows,
-  summarizeActual,
   renderActualPivotTable,
-  renderActualSummaryTable,
   type ActualFilter,
   type ActualStatusFilter,
-  type ActualSummaryAxis,
-} from './_actual_logic.js';
-import { resolveProjectIdAsync } from '../util/projectId.js';
-import { ConfigError } from '../util/errors.js';
-import { printResult } from '../util/output.js';
+} from '../_actual_logic.js';
+import { loadSession } from '../../auth/session.js';
 
-export interface ActualCmdOpts {
+export interface ActualListCmdOpts {
   readonly projectId?: string;
-  readonly json?: boolean;
   readonly month?: string;
+  readonly status?: string;
   readonly department?: string;
   readonly role?: string;
   readonly staffName?: string;
-  readonly status?: string; // 'pending' | 'approved' | 'all'
   readonly from?: string;
   readonly to?: string;
-  readonly by?: string;           // 'month' | 'department' | 'role'
+  readonly buildCompareResult?: boolean;
   readonly refreshProjects?: boolean;
+  readonly json?: boolean;
 }
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -57,16 +51,6 @@ function parseStatusFilter(raw: string | undefined): ActualStatusFilter {
   );
 }
 
-const VALID_AXES: ReadonlySet<ActualSummaryAxis> = new Set(['month', 'department', 'role']);
-
-function parseAxis(raw: string | undefined): ActualSummaryAxis {
-  const v = (raw ?? 'month') as ActualSummaryAxis;
-  if (!VALID_AXES.has(v)) {
-    throw new ConfigError(`--by must be one of month|department|role (got "${raw}")`);
-  }
-  return v;
-}
-
 function getCurrentMonth(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -74,7 +58,7 @@ function getCurrentMonth(): string {
   return `${y}-${m}`;
 }
 
-export async function actualCmd(opts: ActualCmdOpts): Promise<void> {
+export async function listCmd(opts: ActualListCmdOpts): Promise<void> {
   validateMonth('--month', opts.month);
   validateMonth('--from', opts.from);
   validateMonth('--to', opts.to);
@@ -82,7 +66,7 @@ export async function actualCmd(opts: ActualCmdOpts): Promise<void> {
   const statusFilter = parseStatusFilter(opts.status);
 
   const client = await getClientOrExit();
-  const session = await import('../auth/session.js').then((m) => m.loadSession());
+  const session = await loadSession();
   if (!session) {
     throw new ConfigError('No session. Run `atlas auth login` first.');
   }
@@ -143,44 +127,6 @@ export async function actualCmd(opts: ActualCmdOpts): Promise<void> {
   const filtered = filterActualRows(allRows, filter);
 
   const monthFilter = { from: opts.from, to: opts.to };
-  // If --by is specified, produce a summary view instead of the pivot table
-  const axis = opts.by ? parseAxis(opts.by) : undefined;
-
-  if (axis) {
-    const summary = summarizeActual(filtered, axis, monthFilter);
-    const projLabel = resolved.name
-      ? `project "${resolved.name}" (${projectId})`
-      : `project ${projectId}`;
-
-    printResult(
-      {
-        projectId,
-        projectName: resolved.name ?? null,
-        month,
-        by: axis,
-        filter: {
-          status: statusFilter,
-          department: opts.department ?? null,
-          role: opts.role ?? null,
-          staffName: opts.staffName ?? null,
-          from: opts.from ?? null,
-          to: opts.to ?? null,
-        },
-        entries: summary,
-      },
-      {
-        json: opts.json,
-        meta: { rows: summary.length },
-        renderHuman: () => {
-          // eslint-disable-next-line no-console
-          console.log(renderActualSummaryTable(axis, summary));
-          // eslint-disable-next-line no-console
-          console.log(`\n${summary.length} bucket(s) by ${axis} in ${projLabel} (${month})`);
-        },
-      },
-    );
-    return;
-  }
 
   // Default: pivot view (per-staff, per-week)
   const pivot = pivotActualRows(filtered, monthFilter);

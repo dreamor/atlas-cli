@@ -1,9 +1,9 @@
-import { getClientOrExit } from './_client.js';
-import { fetchLinePlans } from './_lineplans.js';
-import { decorateLinePlan, renderTable } from './_render.js';
-import { loadDepartments, loadDictionary } from '../dict/cache.js';
-import { resolveProjectIdAsync } from '../util/projectId.js';
-import { printResult } from '../util/output.js';
+import { getClientOrExit } from '../_client.js';
+import { fetchLinePlans } from '../_lineplans.js';
+import { decorateLinePlan, renderTable } from '../_render.js';
+import { loadDepartments, loadDictionary } from '../../dict/cache.js';
+import { resolveProjectIdAsync } from '../../util/projectId.js';
+import { printResult } from '../../util/output.js';
 
 export interface ListCmdOpts {
   readonly projectId?: string;

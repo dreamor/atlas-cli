@@ -1,27 +1,30 @@
+/**
+ * `atlas baseline import` — 从 .xlsx/.csv 批量导入人力基线数据（默认仅预览）。
+ */
+import { getClientOrExit } from '../_client.js';
+import { loadWorkbook, type WorkbookSummary } from '../_import_validate.js';
+import { resolveProjectIdAsync } from '../../util/projectId.js';
+import { ConfigError, NotImplementedError } from '../../util/errors.js';
+import { loadSession, buildCookieHeader } from '../../auth/session.js';
+import { BASE_URL, DEFAULT_USER_AGENT } from '../../util/paths.js';
+import { SessionExpiredError } from '../../util/errors.js';
+import { printResult } from '../../util/output.js';
+import type { Session } from '../../auth/session.js';
 import { request, FormData } from 'undici';
-import { getClientOrExit } from './_client.js';
-import { loadWorkbook, type WorkbookSummary } from './_import_validate.js';
-import { resolveProjectIdAsync } from '../util/projectId.js';
-import { ConfigError, NotImplementedError } from '../util/errors.js';
-import { loadSession, buildCookieHeader, type Session } from '../auth/session.js';
-import { BASE_URL, DEFAULT_USER_AGENT } from '../util/paths.js';
-import { SessionExpiredError } from '../util/errors.js';
-import { printResult } from '../util/output.js';
 
-export type ImportTarget = 'lineplan' | 'month';
+export type BaselineImportTarget = 'lineplan' | 'month';
 
-const VALID_IMPORT_TARGETS = new Set<ImportTarget>(['lineplan', 'month']);
+const VALID_TARGETS = new Set<BaselineImportTarget>(['lineplan', 'month']);
 
-export function parseImportTarget(raw: string | undefined): ImportTarget {
-  // Default to month — the only currently-wired endpoint.
-  const v = (raw ?? 'month') as ImportTarget;
-  if (!VALID_IMPORT_TARGETS.has(v)) {
+export function parseImportTarget(raw: string | undefined): BaselineImportTarget {
+  const v = (raw ?? 'month') as BaselineImportTarget;
+  if (!VALID_TARGETS.has(v)) {
     throw new ConfigError(`--target must be lineplan|month (got "${raw}")`);
   }
   return v;
 }
 
-export interface ImportCmdOpts {
+export interface BaselineImportCmdOpts {
   readonly projectId?: string;
   readonly file: string;
   readonly apply?: boolean;
@@ -39,7 +42,7 @@ interface ImportOutcome {
   readonly serverResponse?: unknown;
 }
 
-export async function importCmd(opts: ImportCmdOpts): Promise<void> {
+export async function importCmd(opts: BaselineImportCmdOpts): Promise<void> {
   if (!opts.file) throw new ConfigError('--file <path> is required.');
   const target = parseImportTarget(opts.target);
   if (target === 'lineplan') {
@@ -109,7 +112,6 @@ async function postMultipart(
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  // FormData typings in undici allow passing a filename string as the 3rd arg.
   form.set('file', blob, originalFileName.split('/').pop() ?? 'upload.xlsx');
 
   const url = `${BASE_URL}/yuntu-service/line/plan/month/import.json`;
@@ -143,7 +145,7 @@ async function postMultipart(
   }
 }
 
-function emit(outcome: ImportOutcome, opts: ImportCmdOpts): void {
+function emit(outcome: ImportOutcome, opts: BaselineImportCmdOpts): void {
   const s = outcome.summary;
   const projLine = outcome.projectName
     ? `projectId: ${outcome.projectId} ("${outcome.projectName}")`

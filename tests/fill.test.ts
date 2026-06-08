@@ -4,7 +4,7 @@ import {
   parseRenderedJson,
   renderTemplate,
 } from '../adapters/atlas/commands/_fill_render.js';
-import { parseStageFile } from '../adapters/atlas/commands/fill.js';
+import { parseStageFile } from '../adapters/atlas/commands/baseline/fill.js';
 import type { LinePlan } from '../adapters/atlas/schema/models.js';
 
 const sampleRow: LinePlan = {

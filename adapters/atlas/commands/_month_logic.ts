@@ -16,12 +16,18 @@ export interface RowFilter {
 }
 
 /** Convert epoch-ms (number or numeric string) to 'YYYY-MM'. Returns null
- * if the value cannot be coerced to a finite date. */
+ * if the value cannot be coerced to a finite date.
+ *
+ * NOTE: Banma API timestamps are China Standard Time (UTC+8) midnights.
+ * Before extracting the month we add the offset so the UTC methods give
+ * the correct calendar month. */
+const CST_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 export function epochMsToMonthKey(raw: unknown): MonthKey | null {
   if (raw === null || raw === undefined || raw === '') return null;
   const n = typeof raw === 'number' ? raw : Number(raw);
   if (!Number.isFinite(n)) return null;
-  const d = new Date(n);
+  const d = new Date(n + CST_OFFSET_MS);
   if (Number.isNaN(d.getTime())) return null;
   const y = d.getUTCFullYear();
   const m = d.getUTCMonth() + 1;

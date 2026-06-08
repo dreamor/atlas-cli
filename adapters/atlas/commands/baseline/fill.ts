@@ -1,24 +1,24 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { getClientOrExit } from './_client.js';
+import { getClientOrExit } from '../_client.js';
 import {
   fetchLinePlans,
   fetchLinePlanMonths,
   saveLinePlans,
   saveLinePlanMonths,
-} from './_lineplans.js';
+} from '../_lineplans.js';
 import {
   buildStagedUpdate,
   parseRenderedJson,
   renderTemplate,
   type StagedUpdate,
-} from './_fill_render.js';
-import { callClaude, getAnthropicKey } from './_llm.js';
-import { resolveProjectIdAsync } from '../util/projectId.js';
-import { ConfigError } from '../util/errors.js';
-import { printResult } from '../util/output.js';
-import { newToken, writeManifest } from '../util/undo.js';
-import type { LinePlan, LinePlanMonth } from '../schema/models.js';
+} from '../_fill_render.js';
+import { callClaude, getAnthropicKey } from '../_llm.js';
+import { resolveProjectIdAsync } from '../../util/projectId.js';
+import { ConfigError } from '../../util/errors.js';
+import { printResult } from '../../util/output.js';
+import { newToken, writeManifest } from '../../util/undo.js';
+import type { LinePlan, LinePlanMonth } from '../../schema/models.js';
 
 const DEFAULT_LLM_MODEL = 'claude-3-5-sonnet-latest';
 const VALID_TARGETS = new Set<FillTarget>(['lineplan', 'month']);

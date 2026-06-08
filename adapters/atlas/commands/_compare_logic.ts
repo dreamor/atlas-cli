@@ -1,6 +1,14 @@
 /**
  * Pure comparison logic: baseline (计划) vs actual (实际) manpower.
  *
+ * Unit convention:
+ *   - Baseline (计划): monthly values are in 人月 (person-months)
+ *   - Actual (实际):   `summarizeActual` returns aggregated values in 人天
+ *                      (person-days, because weeklyActuals[].manpower is
+ *                      reported in days per week).
+ *   - Compare:        actual 人天 is converted to 人月 (÷22) so both axes
+ *                     are compared in the same unit.
+ *
  * Consumes the same data structures used by `_month_logic.ts` (baseline)
  * and `_actual_logic.ts` (actual), then merges them into a unified
  * comparison view grouped by a chosen axis (month / department / role).
@@ -24,6 +32,9 @@ import {
   type SummaryEntry,
 } from './_month_logic.js';
 import { toManpower } from './_month_logic.js';
+
+/** 1 人月 = 22 工作日（用于人天→人月换算）。 */
+export const PERSON_MONTHS_TO_DAYS = 22;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +84,9 @@ function groupBaselineEntries(
 /**
  * Build a map key → number from summarizeActual output,
  * folding multiple rows into a single actual number per key.
+ *
+ * Note: summarizeActual returns 人天 (person-days). The returned map
+ * converts to 人月 (÷22) so compare keys are in the same unit as baseline.
  */
 function groupActualEntries(
   entries: ReadonlyArray<ActualSummaryEntry>,
@@ -80,7 +94,8 @@ function groupActualEntries(
   const map = new Map<string, number>();
   for (const e of entries) {
     const prev = map.get(e.key) ?? 0;
-    map.set(e.key, prev + e.total);
+    // 人天 → 人月（1 人月 = 22 工作日）
+    map.set(e.key, prev + e.total / PERSON_MONTHS_TO_DAYS);
   }
   return map;
 }
@@ -88,11 +103,14 @@ function groupActualEntries(
 /**
  * Compare baseline vs actual, producing a unified list of entries.
  *
+ * Both baseline and actual are expected in 人月 (person-months).
+ * Actual is converted internally from 人天 via groupActualEntries.
+ *
  * - Keys present only in baseline → diff = -baseline (under)
  * - Keys present only in actual  → baseline = 0, diff = +actual (overrun)
  * - Keys in both                → diff = actual - baseline
  *
- * `threshold` is the absolute diff (hours) above which a row is flagged.
+ * `threshold` is the absolute diff (人月) above which a row is flagged.
  * `flagOverrun` when true marks actual > baseline rows with 'overrun'.
  */
 export function compareBaselines(

@@ -1,0 +1,1 @@
+export { compareCmd } from './compare.js';

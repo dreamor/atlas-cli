@@ -1,22 +1,48 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+
+// Auth
 import { authLoginCmd, authStatusCmd } from './commands/auth.js';
-import { listCmd } from './commands/list.js';
-import { showCmd } from './commands/show.js';
-import { exportCmd } from './commands/export.js';
-import { fillCmd } from './commands/fill.js';
-import { importCmd } from './commands/import.js';
-import { monthCmd } from './commands/month.js';
-import { summaryCmd } from './commands/summary.js';
-import { actualCmd } from './commands/actual.js';
-import { compareCmd } from './commands/compare.js';
+
+// Project commands (find, projects, link, unlink)
+import {
+  findCmd,
+  linkCmd,
+  linkStatusCmd,
+  unlinkCmd,
+  projectsCmd,
+} from './commands/project/index.js';
+
+// Baseline commands (list, show, month, summary, export, fill, import)
+import {
+  listCmd as baselineListCmd,
+  showCmd as baselineShowCmd,
+  monthCmd as baselineMonthCmd,
+  summaryCmd as baselineSummaryCmd,
+  exportCmd as baselineExportCmd,
+  fillCmd as baselineFillCmd,
+  importCmd as baselineImportCmd,
+} from './commands/baseline/index.js';
+
+// Actual commands (list, show, month, summary, export)
+import {
+  listCmd as actualListCmd,
+  showCmd as actualShowCmd,
+  monthCmd as actualMonthCmd,
+  summaryCmd as actualSummaryCmd,
+  exportCmd as actualExportCmd,
+} from './commands/actual/index.js';
+
+// Compare
+import { compareCmd } from './commands/compare/index.js';
+
+// Utility commands
 import { daemonCmd } from './daemon/index.js';
-import { resolveCmd } from './commands/resolve.js';
 import { schemaCommandsCmd, schemaExportCmd } from './commands/schema.js';
 import { undoCmd } from './commands/undo.js';
 import { execCmd } from './commands/exec.js';
 import { suggestCmd } from './commands/suggest.js';
-import { linkCmd, linkStatusCmd, unlinkCmd } from './commands/link.js';
+
 import {
   BanmaApiError,
   ConfigError,
@@ -26,8 +52,6 @@ import {
 import { isJsonMode, printError } from './util/output.js';
 
 function handleError(err: unknown): never {
-  // In JSON mode, route to stdout as a uniform envelope and exit with the
-  // appropriate code. Human (stderr) text is suppressed.
   if (isJsonMode()) {
     printError(err, { json: true });
     process.exit(exitCodeFor(err));
@@ -124,30 +148,11 @@ function addProjectOptions(cmd: Command): Command {
     );
 }
 
-export function buildProgram(): Command {
-  const program = new Command();
-  program
-    .name('atlas')
-    .description('Atlas CLI - 斑马云图人力基线管理工具')
-    .option('--json', '以 JSON 信封输出（也可用环境变量 ATLAS_OUTPUT=json）')
-    .option('--describe', '不执行命令，仅输出该命令的参数 schema（agent 自省用）')
-    .showHelpAfterError()
-    .hook('preAction', (thisCommand, actionCommand) => {
-      // Propagate top-level --json down to ATLAS_OUTPUT so deep helpers can
-      // see it without threading the flag through every call site.
-      const opts = thisCommand.opts() as { json?: boolean; describe?: boolean };
-      if (opts.json === true && process.env.ATLAS_OUTPUT === undefined) {
-        process.env.ATLAS_OUTPUT = 'json';
-      }
-      // --describe short-circuits the action: emit a JSON description of the
-      // resolved subcommand and exit successfully. Runs after global hooks
-      // but before the action callback.
-      if (opts.describe === true) {
-        emitDescribe(actionCommand);
-        process.exit(0);
-      }
-    });
+// ---------------------------------------------------------------------------
+// Registration functions
+// ---------------------------------------------------------------------------
 
+function registerAuthCommands(program: Command): void {
   const auth = program.command('auth').description('SSO 会话管理');
   auth
     .command('login')
@@ -170,39 +175,110 @@ export function buildProgram(): Command {
         handleError(e);
       }
     });
+}
 
-  addProjectOptions(
-    program
-      .command('list')
-      .description('列出项目中的条目'),
-  )
-    .option('--json', '输出 JSON')
-    .option('--page <n>', '页码（向前兼容）')
-    .option('--page-size <n>', '每页数量（向前兼容）')
-    .action(async (opts) => {
+function registerProjectCommands(program: Command): void {
+  // atlas find
+  program
+    .command('find <kind> <query>')
+    .description(
+      '搜索项目/部门/字典值（kind: project|department|mp-type|line-plan-type|src-type|area-code）',
+    )
+    .option('--json', '输出 JSON 信封')
+    .option('--refresh', '刷新字典/部门/项目缓存')
+    .option('--limit <n>', '最多返回 N 个候选（默认 20）')
+    .action(async (kind: string, query: string, opts) => {
       try {
-        await listCmd(opts);
+        await findCmd(kind, query, opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas projects
+  program
+    .command('projects')
+    .description('列出我有权限的所有项目')
+    .option('--json', '输出 JSON 信封')
+    .option('--refresh', '刷新项目缓存')
+    .action(async (opts) => {
+      try {
+        await projectsCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  // atlas link
+  program
+    .command('link [project]')
+    .description('绑定当前项目（精确名称/子串/数字ID）。不带参数时显示当前绑定状态')
+    .option('--json', '输出 JSON 信封')
+    .option('--refresh-projects', '解析 project 前重新获取项目目录缓存')
+    .action(async (project: string | undefined, opts) => {
+      try {
+        if (project === undefined) {
+          await linkStatusCmd(opts);
+        } else {
+          await linkCmd(project, opts);
+        }
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  // atlas unlink
+  program
+    .command('unlink')
+    .description('清除当前项目绑定')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await unlinkCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+}
+
+function registerBaselineCommands(program: Command): void {
+  const base = program.command('baseline').description('基线（计划）人力数据');
+
+  // atlas baseline list
   addProjectOptions(
-    program
+    base
+      .command('list')
+      .description('列出项目中的基线条目'),
+  )
+    .option('--json', '输出 JSON')
+    .option('--page <n>', '页码')
+    .option('--page-size <n>', '每页数量')
+    .action(async (opts) => {
+      try {
+        await baselineListCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  // atlas baseline show
+  addProjectOptions(
+    base
       .command('show <itemId>')
-      .description('显示单个条目（目前为客户端过滤）'),
+      .description('显示单个基线条目'),
   )
     .option('--json', '输出 JSON')
     .action(async (itemId: string, opts) => {
       try {
-        await showCmd(itemId, opts);
+        await baselineShowCmd(itemId, opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas baseline month
   addProjectOptions(
-    program
+    base
       .command('month')
       .description('人力基线汇总（按月显示人力投入）'),
   )
@@ -216,16 +292,17 @@ export function buildProgram(): Command {
     .option('--all-months', '显示所有月份（默认：只显示有人力的月份）')
     .action(async (opts) => {
       try {
-        await monthCmd(opts);
+        await baselineMonthCmd(opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas baseline summary
   addProjectOptions(
-    program
+    base
       .command('summary')
-      .description('按月/部门/角色汇总人力投入'),
+      .description('按月/部门/角色汇总基线人力投入'),
   )
     .option('--by <axis>', 'month | department | role', 'month')
     .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
@@ -233,60 +310,56 @@ export function buildProgram(): Command {
     .option('--json', '输出 JSON')
     .action(async (opts) => {
       try {
-        await summaryCmd(opts);
+        await baselineSummaryCmd(opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas baseline export
   addProjectOptions(
-    program
+    base
       .command('export')
-      .description('导出条目到 CSV/JSON（parquet 暂未实现）'),
+      .description('导出基线条目到 CSV/JSON'),
   )
     .requiredOption('--format <fmt>', 'csv | json | parquet')
     .requiredOption('--out <path>', '输出文件路径')
     .option('--since <iso>', '仅导出指定时间后修改的条目（ISO 时间戳）')
-    .option('--target <target>', 'baseline（默认）| actual — 导出目标数据类型', 'baseline')
-    .option('--by <axis>', 'month | department | role（仅 --target actual 时有效）')
-    .option('--status <status>', 'pending | approved | all（仅 --target actual 时有效）', 'all')
-    .option('--department <name>', '按部门筛选（仅 --target actual 时有效）')
-    .option('--role <name>', '按角色筛选（仅 --target actual 时有效）')
-    .option('--from <yyyymm>', '起始月份（YYYY-MM）')
-    .option('--to <yyyymm>', '结束月份（YYYY-MM）')
     .option('--json', '输出 JSON 信封（结果摘要）')
     .action(async (opts) => {
       try {
         if (!['csv', 'json', 'parquet'].includes(opts.format)) {
           throw new ConfigError(`--format must be csv|json|parquet, got "${opts.format}"`);
         }
-        await exportCmd(opts);
+        await baselineExportCmd(opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas baseline fill
   addProjectOptions(
-    program
+    base
       .command('fill')
       .description('使用模板批量更新条目（默认仅预览，不实际修改）'),
   )
     .requiredOption('--template <path>', 'Nunjucks/Jinja 模板文件路径')
-    .option('--out <path>', '暂存文件路径（默认 ./fill-stage-<projectId>-<ts>.json）')
+    .option('--out <path>', '暂存文件路径')
     .option('--target <target>', 'lineplan（默认）| month — 目标端点', 'lineplan')
     .option('--llm <model>', '可选 LLM 模型 ID（Claude）。需要设置 ANTHROPIC_API_KEY 环境变量')
     .option('--apply', '读取暂存文件并提交更新到服务器')
     .option('--json', '输出 JSON 结果')
     .action(async (opts) => {
       try {
-        await fillCmd(opts);
+        await baselineFillCmd(opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas baseline import
   addProjectOptions(
-    program
+    base
       .command('import')
       .description('从 .xlsx/.csv 批量导入人力数据（默认仅预览）'),
   )
@@ -296,12 +369,149 @@ export function buildProgram(): Command {
     .option('--json', '输出 JSON 结果')
     .action(async (opts) => {
       try {
-        await importCmd(opts);
+        await baselineImportCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+}
+
+function registerActualCommands(program: Command): void {
+  const base = program.command('actual').description('实际人力数据');
+
+  // atlas actual list
+  addProjectOptions(
+    base
+      .command('list')
+      .description('实际工时明细（人员×周透视表）'),
+  )
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
+    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
+    .option('--department <name>', '按团队负责人/部门筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
+    .option('--staff-name <name>', '按姓名/工号筛选（子串，不区分大小写）')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await actualListCmd(opts);
       } catch (e) {
         handleError(e);
       }
     });
 
+  // atlas actual show <staffId>
+  addProjectOptions(
+    base
+      .command('show <staffId>')
+      .description('查看单个人员的实际工时明细'),
+  )
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
+    .option('--json', '输出 JSON 信封')
+    .action(async (staffId: string, opts) => {
+      try {
+        await actualShowCmd(staffId, opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  // atlas actual month
+  addProjectOptions(
+    base
+      .command('month')
+      .description('按月查看实际人力投入'),
+  )
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
+    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
+    .option('--department <name>', '按团队负责人/部门筛选')
+    .option('--role <name>', '按角色/备注筛选')
+    .option('--staff-name <name>', '按姓名/工号筛选')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await actualMonthCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  // atlas actual summary
+  addProjectOptions(
+    base
+      .command('summary')
+      .description('按月/部门/角色汇总实际工时'),
+  )
+    .option('--by <axis>', 'month | department | role', 'month')
+    .option('--month <yyyymm>', '查询月份')
+    .option('--status <status>', 'pending | approved | all', 'all')
+    .option('--department <name>', '按部门筛选')
+    .option('--role <name>', '按角色筛选')
+    .option('--from <yyyymm>', '起始月份')
+    .option('--to <yyyymm>', '结束月份')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await actualSummaryCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+
+  // atlas actual export
+  addProjectOptions(
+    base
+      .command('export')
+      .description('导出实际工时数据（CSV/JSON）'),
+  )
+    .requiredOption('--format <fmt>', 'csv | json | parquet')
+    .requiredOption('--out <path>', '输出文件路径')
+    .option('--by <axis>', 'month | department | role', 'month')
+    .option('--status <status>', 'pending | approved | all', 'all')
+    .option('--department <name>', '按部门筛选')
+    .option('--role <name>', '按角色筛选')
+    .option('--from <yyyymm>', '起始月份')
+    .option('--to <yyyymm>', '结束月份')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await actualExportCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+}
+
+function registerCompareCommands(program: Command): void {
+  addProjectOptions(
+    program
+      .command('compare')
+      .description('Compare baseline (计划) vs actual (实际) manpower'),
+  )
+    .option('--by <axis>', 'month | department | role', 'month')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，优先级高于 from/to 用于实际数据 API）')
+    .option('--department <name>', '按部门名称/ID 筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
+    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
+    .option('--threshold <n>', '差异绝对值阈值（小时），低于此值不标记', '0')
+    .option('--flag-overrun', '用 ⚠️ 标记实际 > 基线的情况')
+    .option('--page <n>', '页码（从 1 开始）')
+    .option('--page-size <n>', '每页条目数（大于 0 时启用分页）')
+    .option('--json', '输出 JSON 信封')
+    .action(async (opts) => {
+      try {
+        await compareCmd(opts);
+      } catch (e) {
+        handleError(e);
+      }
+    });
+}
+
+function registerUtilityCommands(program: Command): void {
+  // daemon
   program
     .command('daemon')
     .description('启动本地守护进程（沙盒环境使用，保持浏览器会话）')
@@ -314,22 +524,7 @@ export function buildProgram(): Command {
       }
     });
 
-  program
-    .command('resolve <kind> <query>')
-    .description(
-      '将名称/子串解析为候选 ID（kind: project|department|mp-type|line-plan-type|src-type|area-code）',
-    )
-    .option('--json', '输出 JSON 信封')
-    .option('--refresh', '刷新字典/部门/项目缓存')
-    .option('--limit <n>', '最多返回 N 个候选（默认 20）')
-    .action(async (kind: string, query: string, opts) => {
-      try {
-        await resolveCmd(kind, query, opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
-
+  // schema
   const schema = program.command('schema').description('CLI 自省 / 字段字典导出');
   schema
     .command('export')
@@ -356,9 +551,10 @@ export function buildProgram(): Command {
       }
     });
 
+  // undo
   program
     .command('undo [token]')
-    .description('回滚先前的 fill --apply 操作（基于 ~/.cache/atlas/undo 下的 manifest）')
+    .description('回滚先前的 fill --apply 操作')
     .option('--list', '列出最近的 undo manifest')
     .option('--limit <n>', '配合 --list 使用，最多返回 N 条（默认 30）')
     .option('--json', '输出 JSON 信封')
@@ -370,10 +566,11 @@ export function buildProgram(): Command {
       }
     });
 
+  // exec
   program
     .command('exec')
     .description('按 plan-file 顺序执行多条命令（agent 批处理用）')
-    .requiredOption('--plan-file <path>', 'JSON 计划文件路径，schema: {steps: [{name?, cmd, args?}], stopOnError?}')
+    .requiredOption('--plan-file <path>', 'JSON 计划文件路径')
     .option('--json', '输出 JSON 信封')
     .action(async (opts) => {
       try {
@@ -383,6 +580,7 @@ export function buildProgram(): Command {
       }
     });
 
+  // suggest
   program
     .command('suggest <query...>')
     .description('将自然语言查询翻译为候选 atlas 命令（纯规则，不调 LLM）')
@@ -394,89 +592,38 @@ export function buildProgram(): Command {
         handleError(e);
       }
     });
+}
 
-  addProjectOptions(
-    program
-      .command('compare')
-      .description('Compare baseline (计划) vs actual (实际) manpower'),
-  )
-    .option('--by <axis>', 'month | department | role', 'month')
-    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
-    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
-    .option('--month <yyyymm>', '查询月份（YYYY-MM，优先级高于 from/to 用于实际数据 API）')
-    .option('--department <name>', '按部门名称/ID 筛选（子串，不区分大小写）')
-    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
-    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
-    .option('--threshold <n>', '差异绝对值阈值（小时），低于此值不标记', '0')
-    .option('--flag-overrun', '用 ⚠️ 标记实际 > 基线的情况')
-    .option('--page <n>', '页码（从 1 开始）')
-    .option('--page-size <n>', '每页条目数（大于 0 时启用分页）')
-    .option('--json', '输出 JSON 信封')
-    .action(async (opts) => {
-      try {
-        await compareCmd(opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
-
-  addProjectOptions(
-    program
-      .command('actual')
-      .description('实际投入工时（按周显示，区别于 month 基线数据）'),
-  )
-    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
-    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
-    .option('--department <name>', '按团队负责人/部门筛选（子串，不区分大小写）')
-    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
-    .option('--staff-name <name>', '按姓名/工号筛选（子串，不区分大小写）')
-    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
-    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
-    .option('--by <axis>', 'month | department | role — 汇总维度（设置后输出汇总表而非明细表）')
-    .option('--json', '输出 JSON 信封')
-    .action(async (opts) => {
-      try {
-        await actualCmd(opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
-
+export function buildProgram(): Command {
+  const program = new Command();
   program
-    .command('link [project]')
-    .description('绑定当前项目（精确名称/子串/数字ID）。不带参数时显示当前绑定状态')
-    .option('--json', '输出 JSON 信封')
-    .option('--refresh-projects', '解析 project 前重新获取项目目录缓存')
-    .action(async (project: string | undefined, opts) => {
-      try {
-        if (project === undefined) {
-          await linkStatusCmd(opts);
-        } else {
-          await linkCmd(project, opts);
-        }
-      } catch (e) {
-        handleError(e);
+    .name('atlas')
+    .description('Atlas CLI - 斑马云图人力基线管理工具')
+    .option('--json', '以 JSON 信封输出（也可用环境变量 ATLAS_OUTPUT=json）')
+    .option('--describe', '不执行命令，仅输出该命令的参数 schema（agent 自省用）')
+    .showHelpAfterError()
+    .hook('preAction', (thisCommand, actionCommand) => {
+      const opts = thisCommand.opts() as { json?: boolean; describe?: boolean };
+      if (opts.json === true && process.env.ATLAS_OUTPUT === undefined) {
+        process.env.ATLAS_OUTPUT = 'json';
+      }
+      if (opts.describe === true) {
+        emitDescribe(actionCommand);
+        process.exit(0);
       }
     });
 
-  program
-    .command('unlink')
-    .description('清除当前项目绑定')
-    .option('--json', '输出 JSON 信封')
-    .action(async (opts) => {
-      try {
-        await unlinkCmd(opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
+  registerAuthCommands(program);
+  registerProjectCommands(program);
+  registerBaselineCommands(program);
+  registerActualCommands(program);
+  registerCompareCommands(program);
+  registerUtilityCommands(program);
 
   return program;
 }
 
 // Run whenever this module is the entry point — including via bin symlink.
-// (argv[1] may be a symlink target like /opt/homebrew/bin/atlas that
-// neither ends in .js nor matches import.meta.url.)
 //
 // `atlas exec` re-imports this module to dispatch sub-steps in-process; in
 // that path it sets ATLAS_SKIP_AUTORUN=1 to prevent the second auto-run.

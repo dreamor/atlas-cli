@@ -1,27 +1,26 @@
 /**
- * `atlas resolve <kind> <query>` — agent-friendly name→id resolver.
+ * `atlas find project|department|mp-type|... <query>` — agent-friendly name→id resolver.
  *
- * Unlike the project-id flag (which throws AMBIGUOUS_PROJECT on >1 match),
- * this command ALWAYS succeeds with a list of candidates. Agents call it
- * before any other command and pass the resulting id verbatim, eliminating
- * ambiguity from downstream calls.
+ * Replaces the old `atlas resolve <kind> <query>` with more intuitive "find" semantics.
  *
  * Supported kinds (all case-insensitive substring matching, except project
  * which prefers exact-then-fuzzy):
- *   - project
- *   - department
- *   - mp-type | line-plan-type | src-type  (dictionary lookups)
- *   - area-code                            (dictionary lookup)
+ *   - project        (项目搜索)
+ *   - department     (部门搜索)
+ *   - mp-type        (人力类型搜索)
+ *   - line-plan-type (计划类型搜索)
+ *   - src-type       (来源类型搜索)
+ *   - area-code      (地区编码搜索)
  */
 
-import { getClientOrExit } from './_client.js';
-import { loadProjectCatalog, resolveProjectIdFromName } from '../dict/projectCatalog.js';
-import { loadDepartments, loadDictionary } from '../dict/cache.js';
-import { ConfigError } from '../util/errors.js';
-import { printResult } from '../util/output.js';
-import type { Department, Dictionary } from '../schema/models.js';
+import { getClientOrExit } from '../_client.js';
+import { loadProjectCatalog, resolveProjectIdFromName } from '../../dict/projectCatalog.js';
+import { loadDepartments, loadDictionary } from '../../dict/cache.js';
+import { ConfigError } from '../../util/errors.js';
+import { printResult } from '../../util/output.js';
+import type { Department, Dictionary } from '../../schema/models.js';
 
-export type ResolveKind =
+export type FindKind =
   | 'project'
   | 'department'
   | 'mp-type'
@@ -29,7 +28,7 @@ export type ResolveKind =
   | 'src-type'
   | 'area-code';
 
-const VALID_KINDS: ReadonlySet<ResolveKind> = new Set([
+const VALID_KINDS: ReadonlySet<FindKind> = new Set([
   'project',
   'department',
   'mp-type',
@@ -39,29 +38,29 @@ const VALID_KINDS: ReadonlySet<ResolveKind> = new Set([
 ]);
 
 /** Dictionary `type` ids used by Banma. Verified empirically from the cache. */
-const DICT_TYPE_BY_KIND: Record<Exclude<ResolveKind, 'project' | 'department'>, string> = {
+const DICT_TYPE_BY_KIND: Record<Exclude<FindKind, 'project' | 'department'>, string> = {
   'mp-type': 'mpType',
   'line-plan-type': 'linePlanType',
   'src-type': 'srcType',
   'area-code': 'areaCode',
 };
 
-export interface ResolveCandidate {
+export interface FindCandidate {
   readonly id: string;
   readonly name: string;
   readonly extra?: Record<string, unknown>;
 }
 
-export interface ResolveCmdOpts {
+export interface FindCmdOpts {
   readonly json?: boolean;
   readonly refresh?: boolean;
   readonly limit?: string;
 }
 
-export async function resolveCmd(
+export async function findCmd(
   kind: string,
   query: string,
-  opts: ResolveCmdOpts,
+  opts: FindCmdOpts,
 ): Promise<void> {
   const k = parseKind(kind);
   const limit = parseLimit(opts.limit);
@@ -69,10 +68,10 @@ export async function resolveCmd(
 
   const candidates =
     k === 'project'
-      ? await resolveProjects(client, query, opts.refresh)
+      ? await findProjects(client, query, opts.refresh)
       : k === 'department'
-        ? await resolveDepartments(client, query, opts.refresh)
-        : await resolveDictionary(client, k, query, opts.refresh);
+        ? await findDepartments(client, query, opts.refresh)
+        : await findDictionary(client, k, query, opts.refresh);
 
   const truncated = candidates.length > limit;
   const finalCandidates = candidates.slice(0, limit);
@@ -93,8 +92,8 @@ export async function resolveCmd(
   );
 }
 
-function parseKind(raw: string): ResolveKind {
-  const v = raw as ResolveKind;
+function parseKind(raw: string): FindKind {
+  const v = raw as FindKind;
   if (!VALID_KINDS.has(v)) {
     throw new ConfigError(
       `<kind> must be one of: ${[...VALID_KINDS].join(', ')} (got "${raw}")`,
@@ -112,11 +111,11 @@ function parseLimit(raw: string | undefined): number {
   return n;
 }
 
-async function resolveProjects(
+async function findProjects(
   client: Awaited<ReturnType<typeof getClientOrExit>>,
   query: string,
   refresh: boolean | undefined,
-): Promise<ResolveCandidate[]> {
+): Promise<FindCandidate[]> {
   const catalog = await loadProjectCatalog(client, { refresh });
   const result = resolveProjectIdFromName(catalog, query);
   if (result.kind === 'resolved') {
@@ -133,11 +132,11 @@ async function resolveProjects(
     .map((p) => ({ id: String(p.id), name: p.name }));
 }
 
-async function resolveDepartments(
+async function findDepartments(
   client: Awaited<ReturnType<typeof getClientOrExit>>,
   query: string,
   refresh: boolean | undefined,
-): Promise<ResolveCandidate[]> {
+): Promise<FindCandidate[]> {
   const depts = await loadDepartments(client, { refresh });
   const trimmed = query.trim();
   const lower = trimmed.toLowerCase();
@@ -159,7 +158,6 @@ async function resolveDepartments(
 }
 
 function scoreDepartment(d: Department, raw: string, lower: string): number {
-  // Numeric ids and codes beat substring; exact name beats substring.
   if (String(d.id) === raw) return 100;
   if (d.deptCode && String(d.deptCode) === raw) return 90;
   if (d.buCode && String(d.buCode) === raw) return 90;
@@ -169,17 +167,17 @@ function scoreDepartment(d: Department, raw: string, lower: string): number {
   return 0;
 }
 
-async function resolveDictionary(
+async function findDictionary(
   client: Awaited<ReturnType<typeof getClientOrExit>>,
-  kind: Exclude<ResolveKind, 'project' | 'department'>,
+  kind: Exclude<FindKind, 'project' | 'department'>,
   query: string,
   refresh: boolean | undefined,
-): Promise<ResolveCandidate[]> {
+): Promise<FindCandidate[]> {
   const dict = await loadDictionary(client, { refresh });
   const dictType = DICT_TYPE_BY_KIND[kind];
   const raw = query.trim();
   const lower = raw.toLowerCase();
-  const out: ResolveCandidate[] = [];
+  const out: FindCandidate[] = [];
   for (const row of dict) {
     if (String(row.type) !== dictType) continue;
     if (!matchesDictRow(row, raw, lower)) continue;
@@ -192,28 +190,28 @@ async function resolveDictionary(
 }
 
 function matchesDictRow(row: Dictionary, raw: string, lower: string): boolean {
-  if (raw === '') return true; // empty query → all candidates
+  if (raw === '') return true;
   const id = String(row.attrValue ?? '');
   if (id === raw) return true;
   const name = (row.attrName ?? '').toLowerCase();
   return name === lower || name.includes(lower);
 }
 
-function pickHint(count: number, kind: ResolveKind): string {
+function pickHint(count: number, kind: FindKind): string {
   if (count === 0) return `No ${kind} matches. Try a shorter query or --refresh.`;
   if (count === 1) return `Single match — safe to pass as id to downstream commands.`;
   return `Multiple matches — confirm with the user which id to use.`;
 }
 
 function renderHuman(
-  kind: ResolveKind,
+  kind: FindKind,
   query: string,
   total: number,
-  candidates: readonly ResolveCandidate[],
+  candidates: readonly FindCandidate[],
   truncated: boolean,
 ): void {
   /* eslint-disable no-console */
-  console.log(`Resolved ${candidates.length}/${total} candidate(s) for ${kind} "${query}":`);
+  console.log(`Found ${candidates.length}/${total} candidate(s) for ${kind} "${query}":`);
   for (const c of candidates) {
     console.log(`  ${c.id.padEnd(10)} ${c.name}`);
   }

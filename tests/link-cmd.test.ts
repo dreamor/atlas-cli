@@ -45,7 +45,7 @@ vi.mock('../adapters/atlas/auth/session.js', () => ({
 // Import after mocks
 // ---------------------------------------------------------------------------
 
-import { linkCmd, unlinkCmd, linkStatusCmd } from '../adapters/atlas/commands/link.js';
+import { linkCmd, unlinkCmd, linkStatusCmd } from '../adapters/atlas/commands/project/link.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

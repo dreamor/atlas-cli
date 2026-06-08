@@ -1,7 +1,7 @@
-import { getClientOrExit } from './_client.js';
-import { resolveProjectIdAsync } from '../util/projectId.js';
-import { clearLink, readLink, writeLink } from '../util/link.js';
-import { printResult } from '../util/output.js';
+import { getClientOrExit } from '../_client.js';
+import { resolveProjectIdAsync } from '../../util/projectId.js';
+import { clearLink, readLink, writeLink } from '../../util/link.js';
+import { printResult } from '../../util/output.js';
 
 export interface LinkCmdOpts {
   readonly json?: boolean;
@@ -90,10 +90,10 @@ export async function linkStatusCmd(opts: { json?: boolean }): Promise<void> {
       { linked: false },
       {
         json: opts.json,
-        hint: 'Run `atlas link <project>` to pin a project.',
+        hint: 'Run \`atlas link <project>\` to pin a project.',
         renderHuman: () => {
           // eslint-disable-next-line no-console
-          console.log('No project linked. Run `atlas link <project>` to pin one.');
+          console.log('No project linked. Run \`atlas link <project>\` to pin one.');
         },
       },
     );
