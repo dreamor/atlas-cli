@@ -20,7 +20,9 @@ $tmp = Join-Path $env:TEMP "atlas-bootstrap-$([guid]::NewGuid()).ps1"
 try {
   Write-Info "Fetching $BootstrapUrl"
   Invoke-WebRequest -UseBasicParsing -Uri $BootstrapUrl -OutFile $tmp
-  & powershell -NoProfile -ExecutionPolicy Bypass -File $tmp @args
+  # Detect PowerShell 7+ vs Windows PowerShell 5.1
+  $pwsh = (Get-Process -Id $pid).Path
+  & $pwsh -NoProfile -ExecutionPolicy Bypass -File $tmp @args
   if ($LASTEXITCODE -ne 0) {
     Write-Err "bootstrap.ps1 exited with code $LASTEXITCODE"
     exit $LASTEXITCODE

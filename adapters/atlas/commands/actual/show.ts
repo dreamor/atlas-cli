@@ -104,7 +104,7 @@ export async function showCmd(staffId: string, opts: ActualShowCmdOpts): Promise
         // eslint-disable-next-line no-console
         console.log(`Status: ${match.status === 1 ? 'approved' : 'pending'}`);
         // eslint-disable-next-line no-console
-        console.log(`Total hours: ${match.total}`);
+        console.log(`Total (人月): ${match.total.toFixed(2)}`);
         // eslint-disable-next-line no-console
         console.log(`Headcount: ${match.headcount}`);
         // eslint-disable-next-line no-console

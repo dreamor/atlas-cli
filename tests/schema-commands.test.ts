@@ -26,15 +26,15 @@ describe('schema commands introspection', () => {
     const program = new Command();
     program.name('atlas').description('root');
     program
-      .command('list')
-      .description('列出条目')
-      .option('--project-id <id>', '项目 ID')
-      .option('--json', '输出 JSON');
-    program
       .command('month')
       .description('按月汇总')
       .option('--from <yyyymm>', '起始月份')
       .option('--to <yyyymm>', '结束月份');
+    program
+      .command('export')
+      .description('导出')
+      .option('--format <fmt>', '格式')
+      .option('--out <path>', '路径');
 
     const out = captureStdout(() => {
       schemaCommandsCmd(program, { json: true });
@@ -43,10 +43,10 @@ describe('schema commands introspection', () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.data.commands).toHaveLength(2);
 
-    const list = parsed.data.commands.find((c: { path: string }) => c.path === 'atlas list');
-    expect(list.description).toBe('列出条目');
-    expect(list.options.map((o: { flags: string }) => o.flags)).toEqual(
-      expect.arrayContaining(['--project-id <id>', '--json']),
+    const month = parsed.data.commands.find((c: { path: string }) => c.path === 'atlas month');
+    expect(month.description).toBe('按月汇总');
+    expect(month.options.map((o: { flags: string }) => o.flags)).toEqual(
+      expect.arrayContaining(['--from <yyyymm>', '--to <yyyymm>']),
     );
   });
 
@@ -70,13 +70,13 @@ describe('schema commands introspection', () => {
   it('records argument names and required flag', () => {
     const program = new Command();
     program.name('atlas');
-    program.command('show <itemId>').description('显示').option('--json', 'json');
+    program.command('exec <planFile>').description('批量执行').option('--json', 'json');
 
     const out = captureStdout(() => {
       schemaCommandsCmd(program, { json: true });
     });
     const parsed = JSON.parse(out);
-    const show = parsed.data.commands.find((c: { path: string }) => c.path === 'atlas show');
-    expect(show.args).toEqual([{ name: 'itemId', required: true }]);
+    const exec = parsed.data.commands.find((c: { path: string }) => c.path === 'atlas exec');
+    expect(exec.args).toEqual([{ name: 'planFile', required: true }]);
   });
 });

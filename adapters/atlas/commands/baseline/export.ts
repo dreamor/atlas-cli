@@ -7,16 +7,24 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { getClientOrExit } from '../_client.js';
 import { fetchLinePlans } from '../_lineplans.js';
+import { loadDepartments } from '../../dict/cache.js';
+import { resolveDept } from '../../dict/resolve.js';
 import { resolveProjectIdAsync } from '../../util/projectId.js';
 import { ConfigError, NotImplementedError } from '../../util/errors.js';
 import { printResult } from '../../util/output.js';
 import type { LinePlan } from '../../schema/models.js';
+
+const includesCi = (haystack: string, needle: string): boolean =>
+  haystack.toLowerCase().includes(needle.toLowerCase());
 
 export interface BaselineExportCmdOpts {
   readonly projectId?: string;
   readonly format: 'csv' | 'json' | 'parquet';
   readonly out: string;
   readonly since?: string;
+  readonly department?: string;
+  readonly from?: string;
+  readonly to?: string;
   readonly refreshProjects?: boolean;
   readonly json?: boolean;
 }
@@ -30,15 +38,24 @@ export async function exportCmd(opts: BaselineExportCmdOpts): Promise<void> {
   const projName: string | null = resolved.name ?? null;
 
   const { items } = await fetchLinePlans(client as any, { projectId });
+  const depts = opts.department ? await loadDepartments(client) : [];
 
   const sinceMs = opts.since ? Date.parse(opts.since) : undefined;
-  const filtered =
-    sinceMs && !Number.isNaN(sinceMs)
-      ? items.filter((it) => {
-          const t = parseTime(it.gmtModified ?? it.gmtCreate);
-          return t === null || t >= sinceMs;
-        })
-      : items;
+  let filtered = sinceMs && !Number.isNaN(sinceMs)
+    ? items.filter((it) => {
+        const t = parseTime(it.gmtModified ?? it.gmtCreate);
+        return t === null || t >= sinceMs;
+      })
+    : items;
+
+  // Apply --department filter
+  if (opts.department) {
+    filtered = filtered.filter((it) => {
+      const deptName = resolveDept(depts ?? [], it.departmentId ?? null) ?? '';
+      const blob = `${deptName} ${it.departmentId ?? ''}`;
+      return includesCi(blob, opts.department!);
+    });
+  }
 
   await mkdir(dirname(opts.out), { recursive: true });
 

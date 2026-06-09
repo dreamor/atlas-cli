@@ -129,6 +129,11 @@ ensure_node() {
     if [[ "$major" -ge 20 ]]; then
       log "system node v$(node -v) found — using it"
       ATLAS_NODE_BIN="$(dirname "$(command -v node)")"
+      # Ensure npm and npx are available
+      if ! command -v npm >/dev/null 2>&1; then
+        warn "npm not found in PATH — symlinking from vendored node"
+        npm_link "$ATLAS_NODE_BIN"
+      fi
       return
     fi
     warn "system node $(node -v) is too old (need >=20), installing vendored copy"
@@ -136,6 +141,7 @@ ensure_node() {
   if [[ -x "$ATLAS_RUNTIME/node/bin/node" ]]; then
     log "vendored node already at $ATLAS_RUNTIME/node"
     ATLAS_NODE_BIN="$ATLAS_RUNTIME/node/bin"
+    npm_link "$ATLAS_NODE_BIN"
     return
   fi
   local node_arch
@@ -150,7 +156,22 @@ ensure_node() {
   curl -fsSL --retry 3 "$url" | tar -xz -C "$ATLAS_RUNTIME"
   mv "$ATLAS_RUNTIME/node-v${NODE_VERSION}-${node_arch}" "$ATLAS_RUNTIME/node"
   ATLAS_NODE_BIN="$ATLAS_RUNTIME/node/bin"
+  npm_link "$ATLAS_NODE_BIN"
   log "Node installed at $ATLAS_RUNTIME/node"
+}
+
+# Symlink npm and npx into the atlas bin dir so they're on PATH
+npm_link() {
+  local bin_dir="$1"
+  local target="$ATLAS_BIN"
+  for cmd in npm npx; do
+    if [[ -x "$bin_dir/$cmd" ]] && [[ ! -x "$target/$cmd" ]]; then
+      ln -sf "$bin_dir/$cmd" "$target/$cmd"
+      log "linked $cmd → $target/$cmd"
+    fi
+  done
+  # Also add ATLAS_BIN to PATH for this session so npm/npx are resolvable
+  export PATH="$ATLAS_BIN:$PATH"
 }
 
 ensure_playwright() {

@@ -5,8 +5,7 @@
  *
  * Unit convention:
  *   - baselineEntries[].total are in 人月 (person-months)
- *   - actualEntries[].total   are in 人天 (person-days, from summarizeActual).
- *     Compare divides ÷22 internally to align units.
+ *   - actualEntries[].total   are in 人月 (converted upstream by parseManpower /22).
  */
 import { describe, expect, it } from 'vitest';
 
@@ -25,7 +24,7 @@ import {
 // ---------------------------------------------------------------------------
 // Test fixtures
 //
-// actualEntries[].total is in 人天.  GroupActualEntries ÷22 internally so:
+// actualEntries[].total is already in 人月 (converted upstream by /22):
 //   22 人天 →  1 人月
 //   44 人天 →  2 人月
 //   66 人天 →  3 人月
@@ -38,16 +37,16 @@ const baselineEntries = [
 ] as const;
 
 const actualEntries = [
-  { key: '2025-04', label: '2025-04', total: 22 },   // 人天 → 1 人月
-  { key: '2025-05', label: '2025-05', total: 44 },   // 人天 → 2 人月
-  { key: '2025-06', label: '2025-06', total: 66 },   // 人天 → 3 人月
+  { key: '2025-04', label: '2025-04', total: 1 },    // 人月
+  { key: '2025-05', label: '2025-05', total: 2 },    // 人月
+  { key: '2025-06', label: '2025-06', total: 3 },    // 人月
 ] as const;
 
 // Deleted a key: actualEntries 少了 2025-04，增加 2025-07
 const actualEntriesWithExtra = [
-  { key: '2025-05', label: '2025-05', total: 44 },   // 人天 → 2 人月
-  { key: '2025-06', label: '2025-06', total: 66 },   // 人天 → 3 人月
-  { key: '2025-07', label: '2025-07', total: 22 },   // 人天 → 1 人月
+  { key: '2025-05', label: '2025-05', total: 2 },    // 人月
+  { key: '2025-06', label: '2025-06', total: 3 },    // 人月
+  { key: '2025-07', label: '2025-07', total: 1 },    // 人月
 ] as const;
 
 const baselineByDept = [
@@ -56,8 +55,8 @@ const baselineByDept = [
 ] as const;
 
 const actualByDept = [
-  { key: 'dept:D001', label: '研发部', total: 44 },  // 人天 → 2 人月
-  { key: 'dept:D002', label: '产品部', total: 66 },  // 人天 → 3 人月
+  { key: 'dept:D001', label: '研发部', total: 2 },   // 人月
+  { key: 'dept:D002', label: '产品部', total: 3 },   // 人月
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -150,10 +149,9 @@ describe('compareBaselines', () => {
 
   it('handles zero baseline (diffPercent=0)', () => {
     const base = [{ key: 'dept:D003', label: '测试部', total: 0 }];
-    const actual = [{ key: 'dept:D003', label: '测试部', total: 22 }];  // 人天
+    const actual = [{ key: 'dept:D003', label: '测试部', total: 1 }];  // 人月（上游已 /22）
 
     const entries = compareBaselines(base, actual, 0, false);
-    // 22 人天 ÷ 22 = 1 人月
     expect(entries[0]!.actual).toBeCloseTo(1, 5);
     expect(entries[0]!.diffPercent).toBe(0);
   });
@@ -187,7 +185,7 @@ describe('buildCompareResult', () => {
     expect(result.axis).toBe('month');
     expect(result.entries).toHaveLength(3);
     expect(result.baselineTotal).toBe(88);     // 25+30+33 人月
-    // actual: 22+44+66 人天 = 132 人天 ÷22 = 6 人月
+    // actual: 1+2+3 人月 = 6 人月
     expect(result.actualTotal).toBeCloseTo(6, 2);
     expect(result.grandDiff).toBeCloseTo(-82, 2); // 6 - 88
     expect(result.grandDiffPercent).toBeCloseTo(-93.18, 2);
@@ -201,7 +199,7 @@ describe('buildCompareResult', () => {
     });
 
     expect(result.baselineTotal).toBe(88);
-    // actual: 44+66+22 人天 = 132 人天 ÷22 = 6 人月
+    // actual: 2+3+1 人月 = 6 人月
     expect(result.actualTotal).toBeCloseTo(6, 2);
   });
 });
@@ -234,8 +232,8 @@ describe('label resolution', () => {
   });
 
   it('assignCompareLabels uses baseline labels first, then actual', () => {
-    const entries = compareBaselines(baselineEntries, [{ key: '2025-04', label: '四月', total: 22 }], 0, false);
-    assignCompareLabels(entries, baselineLabelMap(baselineEntries), actualLabelMap([{ key: '2025-04', label: '四月', total: 22 }]));
+    const entries = compareBaselines(baselineEntries, [{ key: '2025-04', label: '四月', total: 1 }], 0, false);
+    assignCompareLabels(entries, baselineLabelMap(baselineEntries), actualLabelMap([{ key: '2025-04', label: '四月', total: 1 }]));
 
     expect(entries[0]!.label).toBe('2025-04'); // baseline label used
   });
@@ -251,9 +249,9 @@ describe('renderCompareTable', () => {
 
     const table = renderCompareTable('month', entries, totals);
     expect(table).toContain('month');
-    expect(table).toContain('baseline(h)');
-    expect(table).toContain('actual(h)');
-    expect(table).toContain('diff(h)');
+    expect(table).toContain('baseline(人月)');
+    expect(table).toContain('actual(人月)');
+    expect(table).toContain('diff(人月)');
     expect(table).toContain('diff%');
   });
 

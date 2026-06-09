@@ -147,7 +147,8 @@ export async function summaryCmd(opts: ActualSummaryCmdOpts): Promise<void> {
         // eslint-disable-next-line no-console
         console.log(renderActualSummaryTable(axis, summary));
         // eslint-disable-next-line no-console
-        console.log(`\n${summary.length} bucket(s) by ${axis} in ${projLabel} (${month})`);
+        const unit = axis === 'month' ? '个月' : axis === 'department' ? '个部门' : '种角色';
+        console.log(`\n共 ${summary.length} ${unit}（按${axis === 'month' ? '月份' : axis === 'department' ? '部门' : '角色'}汇总）— ${projLabel}`);
       },
     },
   );

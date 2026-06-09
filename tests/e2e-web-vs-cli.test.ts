@@ -124,7 +124,8 @@ function cliActual(pendingRows: ReadonlyArray<ActualStaffRow>, approvedRows: Rea
   for (const r of pendingRows) map.set(r.staffId, r);
   for (const r of approvedRows) map.set(r.staffId, r);
   const filtered = filterActualRows([...map.values()], {});
-  return Object.fromEntries(summarizeActual(filtered, 'month', {}).map((e) => [e.key, e.total]));
+  // summarizeActual returns 人月; convert back to 人天 for web-vs-cli comparison
+  return Object.fromEntries(summarizeActual(filtered, 'month', {}).map((e) => [e.key, e.total * 22]));
 }
 
 // ===================================================================
@@ -244,10 +245,10 @@ describe('🔍 E2E: compare — 基线 vs 实际 cross-month 验证', () => {
     }
     const merged = [...masterMap.values()];
     const filtered = filterActualRows(merged, {});
-    const actualSummary = summarizeActual(filtered, 'month', {});  // 人天
-    const actualTotalDays = actualSummary.reduce((s, e) => s + e.total, 0);
+    const actualSummary = summarizeActual(filtered, 'month', {});  // 人月（上游已 /22）
+    const actualTotalMonths = actualSummary.reduce((s, e) => s + e.total, 0);
 
-    // buildCompareResult（内部 ÷22 转人月）
+    // buildCompareResult
     const result = buildCompareResult(baselineSummary, actualSummary, {
       axis: 'month' as const,
       threshold: 0,
@@ -258,9 +259,8 @@ describe('🔍 E2E: compare — 基线 vs 实际 cross-month 验证', () => {
 
     expect(result.entries.length).toBeGreaterThan(0);
 
-    // result.actualTotal 已经是人月（÷22 后）
-    const expectedActualInPersonMonths = actualTotalDays / PERSON_MONTHS_TO_DAYS;
-    expect(Math.abs(result.actualTotal - expectedActualInPersonMonths)).toBeLessThan(0.1);
+    // result.actualTotal 已经是人月（上游已 /22）
+    expect(Math.abs(result.actualTotal - actualTotalMonths)).toBeLessThan(0.1);
     expect(Math.abs(result.grandDiff - (result.actualTotal - result.baselineTotal))).toBeLessThan(0.1);
 
     // 每个 entry 的 diff = actual(人月) - baseline(人月)
@@ -269,7 +269,7 @@ describe('🔍 E2E: compare — 基线 vs 实际 cross-month 验证', () => {
     }
 
     console.log(`  基线总计: ${result.baselineTotal.toFixed(2)} 人月（${baselineSummary.length} months）`);
-    console.log(`  实际总计: ${actualTotalDays.toFixed(1)} 人天 → ${result.actualTotal.toFixed(2)} 人月`);
+    console.log(`  实际总计: ${actualTotalMonths.toFixed(2)} 人月`);
     console.log(`  差异:     ${result.grandDiff.toFixed(2)} 人月（${result.grandDiffPercent.toFixed(1)}%）`);
     console.log(`  ✅ compare 单位换算校验通过（${result.entries.length} entries）`);
   });

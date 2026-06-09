@@ -98,7 +98,7 @@ export function flattenManpowerTree(
         teamLeadId: parentLeadId,
         teamLeadName: parentLeadName,
         status: node.s ?? status,
-        total: node.t ?? 0,
+        total: (node.t ?? 0) / PERSON_DAYS_PER_MONTH,
         headcount: Number(node.h ?? 0),
         weeks: node.weeklyActuals ?? [],
       });
@@ -266,19 +266,27 @@ function epochMsToWeekKey(raw: unknown): string | null {
   return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** Parse the manpower value from a weeklyActuals entry.
+/** Convert raw API hours (人天) to person-months (人月) for the CLI contract.
+ * Actual API delivers hours (人天); baseline uses 人月. All actual CLI commands
+ * display in 人月 so users can compare directly. */
+const PERSON_DAYS_PER_MONTH = 22;
+
+/** Parse the manpower value from a weeklyActuals entry, converting to 人月.
  * Prefers `manpower` field (confirmed format); falls back to `actualManpower`. */
 function parseManpower(wa: ManpowerWeeklyActual): number | null {
+  let hours: number | null = null;
   // Primary: `manpower` field (confirmed working format)
   if (wa.manpower !== null && wa.manpower !== undefined) {
-    return toManpower(wa.manpower);
+    hours = toManpower(wa.manpower);
   }
   // Fallback: `actualManpower` (legacy field)
-  if (wa.actualManpower !== null && wa.actualManpower !== undefined) {
-    return toManpower(wa.actualManpower);
+  if (hours === null && wa.actualManpower !== null && wa.actualManpower !== undefined) {
+    hours = toManpower(wa.actualManpower);
   }
-  return null;
+  return hours !== null ? hours / PERSON_DAYS_PER_MONTH : null;
 }
+
+export const PERSON_DAYS_TO_MONTHS = PERSON_DAYS_PER_MONTH;
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -291,7 +299,7 @@ export function renderActualPivotTable(pivot: ActualPivotResult): string {
     return '(no week data in range)';
   }
 
-  const headerCols = ['team lead', 'staff name', 'role', 'status', ...pivot.weekColumns, 'Total'];
+  const headerCols = ['team lead', 'staff name', 'role', 'status', ...pivot.weekColumns, 'Total(人月)'];
   const rowTotals = pivot.rows.map((r) =>
     pivot.weekColumns.reduce((acc, w) => acc + (r.weekHours[w] ?? 0), 0),
   );
@@ -309,7 +317,7 @@ export function renderActualPivotTable(pivot: ActualPivotResult): string {
     formatNum(rowTotals[i]),
   ]);
   cells.push([
-    'Total', '', '', '',
+    'Total(人月)', '', '', '',
     ...colTotals.map((t) => formatNum(t)),
     formatNum(grandTotal),
   ]);
@@ -424,9 +432,9 @@ export function renderActualSummaryTable(
   if (entries.length === 0) return '(no data)';
   const headerLabel =
     axis === 'month' ? 'month' : axis === 'department' ? 'department' : 'role';
-  const headerCols = [headerLabel, 'actual hours'];
+  const headerCols = [headerLabel, '人月'];
   const cells = entries.map((e) => [e.label, formatNum(e.total)]);
   const grand = entries.reduce((acc, e) => acc + e.total, 0);
-  cells.push(['Total', formatNum(grand)]);
+  cells.push(['Total(人月)', formatNum(grand)]);
   return formatTable(headerCols, cells);
 }

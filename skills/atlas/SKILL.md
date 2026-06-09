@@ -1,249 +1,490 @@
 ---
 name: atlas
-description: 通过 CLI 读写斑马云图人力基线项目数据。当用户想要列出/导出/编辑条目、查看人力基线汇总、按月/部门/角色汇总人力、从 Excel 批量导入人力或生成模板化更新时使用此技能。
+description: 通过 Atlas CLI 读写斑马云图人力基线项目数据（baseline/actual/compare）。当用户想要列出/导出/编辑条目、查看人力基线汇总、查看实际工时、做基线 vs 实际对比分析、按月/部门/角色汇总人力、从 Excel 批量导入人力或生成模板化更新时使用此技能。
 ---
 
-# 斑马云图人力基线 CLI
+# Atlas CLI — 斑马云图人力基线管理工具
 
-薄 TypeScript CLI 层，封装斑马云图 `yuntu-service` API 用于
-mpLine 场景（`/projects/mpLine/list?projectId=<id>`）。通过
-有头 Playwright 浏览器完成一次 BUC SSO 认证，然后为每次
-后续 HTTP 调用重放 cookie + `x-banma-*` 请求头。
+薄 TypeScript CLI 层，封装斑马云图 `yuntu-service` API 用于 mpLine 场景。通过有头 Playwright 浏览器完成一次 BUC SSO 认证，然后为每次后续 HTTP 调用重放 cookie + `x-banma-*` 请求头。
 
-## 使用场景
+**禁止**将此用于 RFT 任务、PMP 工单、Aone 代码或任何非 mpLine 场景 — 适配器按设计仅限于 mpLine 表面。
 
-在用户想要执行以下操作时调用此技能：
-- **列出/导出** 项目中的条目
-- **查看** 单个条目详情
-- **month** — 按（部门、角色、备注）分组的月度人力透视表（人力基线汇总）
-- **summary** — 按月/部门/角色汇总人力
-- **fill** — 通过 Nunjucks/Jinja 模板批量更新条目（或通过 `--target month` 更新月度数据，可选 LLM 辅助）
-- **import** — 从 `.xlsx` 或 `.csv` 文件批量导入月度人力数据
-- 通过缓存的字典/部门树查看项目元数据
+---
 
-**禁止**将此用于 RFT 任务、PMP 工单、Aone 代码或任何非 mpLine
-场景 — 适配器按设计仅限于 mpLine 表面。
+## 快速开始
 
-## 前置条件
+执行任何 atlas 命令前，按顺序完成以下步骤。
 
-每次使用此 skill 前，按顺序执行：
-
-1. **运行 bootstrap（幂等，已就绪时秒退）**
-   ```bash
-   bash scripts/bootstrap.sh
-   ```
-   该脚本会确保 atlas 二进制、Node ≥ 20、playwright + chromium 都已安装到
-   `$ATLAS_HOME`（默认 `~/.atlas`）。**首次运行**会下载约 260 MB
-   并提示确认；非交互场景设 `ATLAS_BOOTSTRAP_YES=1`。
-   - 仅做只读命令（list / month / summary / export）可设 `ATLAS_SKIP_PLAYWRIGHT=1` 跳过浏览器依赖。
-   - 已 clone 仓库且 `npm install` 完成的开发环境会被自动识别，bootstrap 可跳过。
-
-2. **验证会话**：`atlas auth status`
-   - 无会话或失效 → 运行 `atlas auth login`（会打开浏览器，Agent 无法解决 2FA，
-     需要让用户介入）。
-   - 会话保存在 macOS Keychain（服务 `atlas`，账户 `default`）或文件兜底，
-     直到 BUC 令牌过期。
-
-3. **有效的项目 ID**（如 `2548`）— 通过 `--project-id` 参数或 `BANMA_PROJECT_ID`
-   环境变量指定。
-
-任一检查失败则中止并报告具体缺失的前置条件，**不要跳过 bootstrap**。
-
-## 安全约定
-
-- **写入默认仅预览**。`fill` 和 `import` 仅暂存/验证，直到
-  添加 `--apply` 才实际执行。先不带 `--apply` 运行并向用户
-  展示将会有什么变化。
-- **永不绕过 SSO 或存储密码**。会话仅为 BUC cookie +
-  `x-banma-*` 载体镜像。无会话则 CLI 拒绝运行。
-- **每次调用仅操作一个项目**。需要 `--project-id`；永不
-  在单次调用中跨项目变更。
-
-## 沙盒环境支持
-
-在沙盒环境中运行（如 Claude Code 沙盒）时，文件系统访问受限：
-
-1. **先启动守护进程**：
-   ```bash
-   atlas daemon --port 8765
-   ```
-   这将打开浏览器进行 SSO 登录。登录后，cookie 保存在内存中。
-
-2. **正常使用 CLI** - CLI 会自动检测沙盒并使用守护进程：
-   ```bash
-   atlas list --project-id 2548
-   atlas month --project-id 2548 --area-code BSH
-   ```
-
-守护进程保持浏览器会话活跃，用户只需登录一次。
-
-## 自然语言查询
-
-用户用自然语言提问时，你应该：
-1. 解析意图并提取：项目、部门、角色、时间范围
-2. 转换为 CLI 参数：--project-id、--department、--role、--from、--to
-3. 执行命令并展示结果
-
-### 项目名歧义处理（重要）
-
-`--project-id` 接受数字 ID 或项目名称的精确名称/唯一子串。当用户给的项目名匹配多个项目时，CLI 会以非零退出（`Config error: ... matched N projects`）并列出候选 ID + 名称。
-
-遇到这种情况：
-1. **不要重试或猜测**——把 CLI 列出的候选项目原样展示给用户（保留 ID 和完整名称）
-2. **询问用户选第几个**（或让用户给出更具体的关键词）
-3. 用户回复后，**用数字 ID 重试**，不要再用名称
-
-示例：
-- 用户："看下 BMW 项目的人力" → `month --project-id "BMW"` → 报错列出 5 个候选 → 你回复"匹配到 5 个，请选择：1) 2548 BMW IPA LLM 0726 项目 2) ... 您要看哪个？"
-- 用户："第 1 个" → `month --project-id 2548`
-
-不要默认选第一个；项目搞错会查到错的人力数据。
-
-### 过滤字段的模糊匹配
-
-`--department` / `--role` / `--area-code` / `--mp-type` 是**子串过滤器**（不区分大小写），多匹配是 feature 而非错误：
-
-- 用户说「技术部门」→ `--department "技术"` 会命中所有名称包含"技术"的部门（技术板块、运营技术中心、大工具平台等）
-- 用户说「开发」→ `--role "开发"` 会命中所有 role 名包含"开发"的行
-
-行为约定：
-1. 跑命令后**主动告诉用户匹配到了哪几个**部门/角色/地域（看输出表格的去重值），别让用户自己数
-2. 如果匹配范围明显超出用户预期（如用户说"前端开发"但匹配到了全部"开发"），**主动询问是否需要更精确的子串**
-3. 数字 `departmentId` 也接受，用户可以用 `list --json` 找到 ID 后精确指定
-
-示例：
-- 用户："看下技术团队的人力" → 跑 `month --project-id 2548 --department "技术"` → 命中 6 行 → 回复时列出："匹配到 6 个团队：技术板块-斑马 Ai-大模型云侧技术、运营技术中心、大安全、座舱技术中心-大工具平台...，是要看全部还是某个子集？"
-
-示例：
-- "帮我看看产品部门2025年的人力" → `month --project-id <id> --department 产品 --from 2025-01 --to 2025-12`
-- "show me the headcount for algorithm team this year" → `month --project-id <id> --role 算法 --from 2026-01 --to 2026-12`
-- "今年各部门每个月投入多少人" → `summary --project-id <id> --by department --from 2026-01 --to 2026-12`
-- "导出产品部的数据到文件" → `export --project-id <id> --department 产品 --format csv --out <path>`
-
-## 核心命令
-
-### 会话
+### 1. 安装 CLI（如未安装）
 
 ```bash
-atlas auth login
+# 检查是否已安装
+atlas --help >/dev/null 2>&1 && echo "atlas OK" || echo "need install"
+```
+
+如果未安装，通过 install 脚本下载并安装（**自动处理所有依赖**：CLI 二进制 + Node.js ≥ 20 + npm/npx + Playwright + Chromium）：
+
+```bash
+# macOS / Linux
+bash <(curl -fsSL https://raw.githubusercontent.com/dreamor/atlas-cli/main/scripts/install.sh)
+```
+
+```cmd
+REM Windows (自动检测：有 PowerShell 用 .ps1，否则纯 .bat)
+curl -fsSL https://raw.githubusercontent.com/dreamor/atlas-cli/main/scripts/install.bat | cmd
+```
+
+安装后确认 `atlas` 可用，如果提示 `command not found`，让用户新开终端窗口或执行 `source ~/.zshrc`。
+
+> **只读操作可跳过 Playwright**：如果只需 `baseline month` / `baseline summary` / `compare` 等只读命令，无需 Playwright。写入操作（`fill` / `import`）也不需要。仅 `auth login` 和 `daemon` 需要。跳过方式：`ATLAS_SKIP_PLAYWRIGHT=1 bash <(curl -fsSL ...)`
+
+### 2. 登录认证（SSO）
+
+```bash
+# 检查会话状况
 atlas auth status
 ```
 
-- `auth login` 打开有头 Chromium，用户完成 BUC + 2FA 后，CLI
-  从 `/user/info` 提取 cookie + `(empId, account, bucToken, ua)` 并
-  通过 `keytar` 持久化。
-- `auth status` 打印当前会话（empId、cookie 数量、保存时间）。
+如果未登录或会话过期：
 
-### 读取
+- 执行 `atlas auth login`
+- 这会打开 Chromium 浏览器窗口，跳转到斑马云图 SSO 登录页
+- **Agent 无法自动完成**：SSO + OTP 双因子认证需要用户手动在浏览器中完成
+- 登录成功后终端会提示并自动关闭浏览器窗口
+- 会话信息存储在 `~/.config/atlas/session.json`（仅 600 权限）；macOS 还会额外存入 Keychain（keytar）
 
-```bash
-atlas list     --project-id 2548 [--json] [--page N] [--page-size N]
-atlas show     <itemId> --project-id 2548 [--json]
-atlas month    --project-id 2548 [--json] [--department <s>] [--role <s>] [--from YYYY-MM] [--to YYYY-MM]
-atlas summary  --project-id 2548 [--by month|department|role] [--from YYYY-MM] [--to YYYY-MM] [--json]
-atlas export   --project-id 2548 --format csv|json --out <path> [--since <iso>]
-```
-
-- `list` POST `/yuntu-service/line/plan/select.json` 带 `{projectId}`，
-  并渲染表格，`mpType` / `linePlanType` / `srcType` /
-  `departmentId` 通过缓存字典解析（24 h TTL，
-  `~/.cache/atlas/`）。这是**稀疏基表**（仅元数据，无逐月人力）。
-- `month` POST `/yuntu-service/line/plan/month/select.json` 并透视结果：
-  行 = (department, role, remark)，列 = 月份 (YYYY-MM)，单元格 = 人力。
-  这是**滚动人力基线**用户实际关心的 — 当问题是关于
-  月度人力数字时使用此命令而非 `list`。
-- `summary` 将同样的 `month/select` 数据聚合为所选维度的单一数字
-  （月/部门/角色）。适用于高层汇总。
-- `show <id>` 目前在客户端过滤列表（尚无原生详情端点）。
-  可接受，因为 `line/plan/select.json` 一次性返回项目中全部数据。
-- `export` 写入 CSV 或 JSON。`parquet` 尚未实现。
-
-### 写入（默认仅预览）
+查看认证状态验证：
 
 ```bash
-# fill: 渲染每行 Nunjucks/Jinja 模板，暂存更新，审查，然后应用
-atlas fill \
-  --project-id 2548 \
-  --template ./examples/template.j2 \
-  --out /tmp/fill.json \
-  [--llm claude-sonnet-4-5]
-
-# 审查 /tmp/fill.json 后，应用：
-atlas fill \
-  --project-id 2548 \
-  --template ./examples/template.j2 \
-  --out /tmp/fill.json \
-  --apply
-
-# import: 从 xlsx/csv 批量上传月度人力
-atlas import \
-  --project-id 2548 \
-  --file ./examples/sample.xlsx
-# 预览打印表头 + 行数 + 缺失/多余列。
-
-atlas import \
-  --project-id 2548 \
-  --file ./examples/sample.xlsx \
-  --apply
+atlas auth status --json
+# → { "ok": true, "data": { "authenticated": true, "account": "...", "empId": "..." } }
 ```
 
-- `fill` 可选 `--llm <model>` 将渲染后的模板路由通过 Claude
-  （需要 `ANTHROPIC_API_KEY` 环境变量）生成更丰富的更新负载。
-- `import` 必填列：`projectId, mp, areaCode, mpType, departmentId, linePlanType, month, value`。
-  若列不匹配，预览会警告 `missing` / `extra`。仅 xlsx 发送
-  到服务器（csv 本地先转换）。
-- 两个命令仅在 `--apply` 时 POST 到
-  `/yuntu-service/line/plan/save.json?projectId=<id>`（fill）或
-  `/yuntu-service/line/plan/month/import.json` 多部分（import）。
+### 3. 确定项目上下文
+
+```bash
+# 列出你有权限的所有项目（从中找到目标项目 ID）
+atlas projects
+
+# 绑定项目，后续命令无需再传 --project-id
+atlas link <项目名称或ID>
+
+# 或通过参数 / 环境变量指定
+atlas baseline month --project-id 2548
+export BANMA_PROJECT_ID=2548
+```
+
+项目 ID 优先级：`--project-id` 参数 > `BANMA_PROJECT_ID` 环境变量 > `atlas link` 绑定。
+
+项目 ID 有三种指定方式（优先级从高到低）：
+1. `--project-id <id>` 参数
+2. `BANMA_PROJECT_ID` 环境变量
+3. `atlas link` 绑定的项目
+
+---
+
+## 数据模型
+
+| 概念 | 英文 | 单位 | 说明 |
+|------|------|------|------|
+| **基线** | Baseline | 人月 | 计划/预测的人力投入 |
+| **实际** | Actual | 人天 | 实际录入的工作工时 |
+| **对比** | Compare | 人月 | 实际人天 ÷ 22 → 人月后对比基线 |
+
+所有 API 时间戳均为 CST（UTC+8）时区。日期参数统一格式：`YYYY-MM`（如 `2024-01`）。
+
+---
+
+## Agent 友好特性
+
+### `--json` 全局参数
+
+**所有命令**都支持 `--json` 参数，输出统一信封格式：
+
+```json
+// 成功
+{ "ok": true, "data": { ... }, "meta": { ... }, "hint": "..." }
+
+// 错误
+{ "ok": false, "code": "API_ERROR", "message": "...", "hint": "...", "details": { ... } }
+```
+
+也可通过环境变量启用：`ATLAS_OUTPUT=json` 或 `ATLAS_JSON=1`。
+
+### `--describe` 全局参数
+
+**所有命令**都支持 `--describe`，不执行命令，仅输出该命令的完整参数定义（含所有 option、arg、subcommand 元数据）。Agent 可用此动态发现命令结构：
+
+```bash
+atlas baseline month --describe
+atlas actual month --describe
+atlas compare --describe
+```
+
+输出示例：
+```json
+{
+  "ok": true,
+  "data": {
+    "command": "baseline month",
+    "description": "月度汇总",
+    "options": [
+      { "flags": "--project-id <id>", "description": "项目 ID", "required": true },
+      { "flags": "--from <YYYY-MM>", "description": "起始月份" },
+      { "flags": "--to <YYYY-MM>", "description": "截止月份" }
+    ]
+  }
+}
+```
+
+### `atlas schema commands` — 自省命令树
+
+输出**完整命令树**（含每个命令的 path、description、options、args、subcommands），是 `--describe` 的批量版本。Agent 可据此了解 CLI 的完整能力边界：
+
+```bash
+atlas schema commands --json
+```
+
+输出片段：
+```json
+{
+  "ok": true,
+  "data": {
+    "commands": [
+      { "path": "atlas baseline month", "description": "月度汇总", "options": [...], "args": [] },
+      { "path": "atlas actual month", "description": "实际工时明细", "options": [...], "args": [] },
+    ]
+  }
+}
+```
+
+### `atlas exec` — 批量执行计划文件
+
+Agent 可构造 JSON 计划文件，一次调用自动执行多个步骤。适合需要在一次推理中完成多步操作的场景：
+
+```bash
+atlas exec --plan-file ./plan.json
+```
+
+计划文件格式（Zod 校验）：
+
+```json
+{
+  "steps": [
+    {
+      "name": "查看基线",
+      "cmd": "baseline month",
+      "args": { "--project-id": "2548", "--from": "2024-01", "--to": "2024-03" }
+    },
+    {
+      "name": "查看实际",
+      "cmd": "actual month",
+      "args": { "--project-id": "2548", "--month": "2024-01" }
+    }
+  ],
+  "stopOnError": true
+}
+```
+
+每个 step 字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `cmd` | string | 是 | 子命令路径，如 `"baseline month"` |
+| `args` | object | 否 | 参数键值对。key 自动补 `--` 前缀；`true` 表示布尔 flag |
+| `name` | string | 否 | 步骤名称（默认同 `cmd`） |
+| `stopOnError` | boolean | 否 | 出错是否停止（默认 `true`） |
+
+输出结果为统一信封装有 `{ steps: [{ name, cmd, exitCode, result?, error? }], stoppedAt?: idx }`。每个 step 的 `result` 就是该子命令的 JSON 信封。
+
+### `atlas suggest` — 自然语言转命令
+
+纯规则引擎（无 LLM 调用），将中文/英文自然语言翻译为候选 CLI 命令。Agent 可用此辅助解析用户意图：
+
+```bash
+atlas suggest 查看今年第一季度的基线数据
+atlas suggest 对比研发部1月和2月的实际工时
+```
+
+返回建议列表，含 `cmd`、`args`、`confidence`、`reasoning`、`missing` 字段。
+
+### `atlas schema export` — 导出字典数据
+
+导出项目字典值和部门树，结果缓存 24 小时：
+
+```bash
+atlas schema export --out ./schema.json
+atlas schema export --refresh  # 强制刷新缓存
+```
+
+返回 `enums`（mpType/linePlanType/srcType/areaCode）和 `departments`（树形层级）。
+
+---
+
+## 全局选项
+
+| 选项 | 作用 |
+|------|------|
+| `--help` | 查看命令帮助 |
+| `--json` | JSON 信封格式输出（也可通过 `ATLAS_OUTPUT=json` 或 `ATLAS_JSON=1` 环境变量启用） |
+| `--describe` | 查看命令的参数定义，不执行命令 |
+
+通用参数（大部分数据命令支持）：
+
+| 参数 | 说明 |
+|------|------|
+| `--project-id <id>` | 项目 ID（数字或名称） |
+| `--refresh-projects` | 刷新项目缓存 |
+| `--from YYYY-MM` | 起始月份 |
+| `--to YYYY-MM` | 截止月份 |
+| `--department <s>` | 部门名称子串过滤 |
+| `--role <s>` | 角色名称子串过滤 |
+| `--area-code <s>` | 地域代码过滤 |
+| `--mp-type <s>` | 人力类型过滤 |
+| `--json` | JSON 输出 |
+
+---
+
+## 退出码
+
+| 退出码 | 含义 |
+|--------|------|
+| 0 | 成功 |
+| 1 | 通用错误 / `exec` 中某 step 失败 |
+| 2 | 会话过期（`SessionExpiredError`） |
+| 3 | API 返回错误（`BanmaApiError`，含 `errCode` / `errorMsg`） |
+| 64 | 配置错误 / 未实现（`ConfigError`、`NotImplementedError`） |
+
+---
+
+## 命令参考
+
+### `atlas auth` — 认证
+
+```bash
+atlas auth login     # 打开浏览器完成 SSO + 2FA
+atlas auth status    # 查看认证状态
+```
+
+会话存储：`~/.config/atlas/session.json`（仅 600 权限）；macOS 还额外存入 Keychain（keytar）。
+
+### `atlas projects` — 项目管理
+
+```bash
+atlas projects
+atlas projects --json
+atlas projects --refresh   # 刷新项目缓存
+```
+
+### `atlas find` — 搜索
+
+```bash
+atlas find project <名称关键词>
+atlas find department <部门关键词>
+atlas find mp-type <关键词>           # 人力类型：斑马、智软等
+atlas find line-plan-type <关键词>    # 线计划类型/业务线：座舱、AI、语音等
+atlas find area-code <关键词>         # 地域：北上杭、合肥、武汉等
+```
+
+> **注意**：`find` 的 JSON 输出结构与其他命令不同，结果在 `.data.candidates` 数组中：
+> ```json
+> { "ok": true, "data": { "kind": "project", "query": "斑马", "count": 6, "candidates": [...] } }
+> ```
+
+### `atlas link / unlink` — 项目绑定
+
+```bash
+atlas link <项目名称或ID>    # 绑定项目
+atlas link                   # 查看当前绑定
+atlas unlink                 # 解绑
+```
+
+### `atlas baseline` — 基线人力（人月）
+
+```bash
+# 月度汇总（最常用，行=部门+角色+备注，列=月份）
+atlas baseline month --project-id <id>                                   # 无参数=全部月份
+atlas baseline month --project-id <id> --month 2024-01                   # 单月
+atlas baseline month --project-id <id> --from 2024-01 --to 2024-06       # 范围
+atlas baseline month --project-id <id> --department 研发部 --role 前端    # 带过滤
+
+# 多维汇总（支持 --department/--role/--area-code/--mp-type 过滤器）
+atlas baseline summary --project-id <id> --by month
+atlas baseline summary --project-id <id> --by department --from 2024-01 --to 2024-06
+atlas baseline summary --project-id <id> --by department --department 研发
+
+# 导出
+atlas baseline export --project-id <id> --format csv --out ./baseline.csv
+atlas baseline export --project-id <id> --format json --out ./baseline.json
+
+# 模板批量填充（写入，默认仅预览）
+atlas baseline fill --project-id <id> --template ./template.njk --out ./preview.json
+atlas baseline fill --project-id <id> --template ./template.njk --apply
+
+# 导入 xlsx/csv（写入，默认仅预览）
+atlas baseline import --project-id <id> --file ./data.xlsx
+atlas baseline import --project-id <id> --file ./data.xlsx --apply
+```
+
+### `atlas actual` — 实际工时（人天）
+
+```bash
+# 实际工时明细（人员×周期透视表，无参数默认查当前自然年）
+atlas actual month --project-id <id> --month 2024-05
+atlas actual month --project-id <id> --from 2024-01 --to 2024-06
+atlas actual month --project-id <id> --from 2024-01 --to 2024-06 --department 研发部
+
+# 单人明细
+atlas actual show <staffId> --project-id <id> --month 2024-05
+
+# 多维汇总
+atlas actual summary --project-id <id> --by month
+atlas actual summary --project-id <id> --by department --from 2024-01 --to 2024-06
+
+# 导出
+atlas actual export --project-id <id> --format csv --out ./actuals.csv
+```
+
+`actual` 特有的过滤参数：
+
+| 参数 | 说明 |
+|------|------|
+| `--status pending\|approved\|all` | 审批状态过滤（默认 `all`） |
+| `--staff-name <s>` | 员工姓名过滤 |
+| `--month YYYY-MM` | 指定月份（部分命令必需） |
+
+### `atlas compare` — 对比分析
+
+实际工时（人天）÷ 22 转换为**人月**后与基线进行对比：
+
+```bash
+# 按月对比
+atlas compare --project-id <id>
+
+# 按部门/角色汇总
+atlas compare --project-id <id> --by department
+atlas compare --project-id <id> --by role
+
+# 限定月份范围
+atlas compare --project-id <id> --from 2024-01 --to 2024-06
+
+# 标记超支（实际 > 基线）
+atlas compare --project-id <id> --flag-overrun
+
+# 设置差异阈值（小时）
+atlas compare --project-id <id> --threshold 40
+
+# 筛选
+atlas compare --project-id <id> --department 研发部 --role 前端
+```
+
+对比特有的参数：
+
+| 参数 | 说明 |
+|------|------|
+| `--flag-overrun` | 标记超支行（实际 > 基线） |
+| `--threshold <n>` | 差异阈值（小时），超过才标记 |
+| `--page <n>` | 分页页码 |
+| `--page-size <n>` | 每页行数 |
+
+### `atlas exec` — 批量执行
+
+```bash
+atlas exec --plan-file ./plan.json
+```
+
+见上方 [Agent 友好特性](#atlas-exec--批量执行计划文件) 章节。
+
+### `atlas suggest` — 自然语言转命令
+
+```bash
+atlas suggest 查看今年第一季度的基线数据
+atlas suggest --json                    # JSON 格式输出
+```
+
+### `atlas undo` — 撤销操作
+
+撤销 `baseline fill --apply` 或 `baseline import --apply` 的执行结果：
+
+```bash
+# 列出最近的变更
+atlas undo --list --limit 10
+
+# 撤销指定操作
+atlas undo <undoToken>
+```
+
+### `atlas daemon` — 守护进程模式
+
+沙盒环境使用，保持持久浏览器会话：
+
+```bash
+atlas daemon
+atlas daemon --port 9765
+```
+
+### `atlas schema` — 自省
+
+```bash
+# 导出字典和部门树
+atlas schema export --out ./schema.json
+atlas schema export --refresh    # 刷新缓存
+
+# 列出所有命令参数定义
+atlas schema commands --json
+```
+
+---
+
+## 项目名的歧义处理
+
+`--project-id` 接受数字 ID 或项目名称的精确名称/唯一子串。当匹配多个项目时，CLI 会以退出码 64 报错并列出所有候选。
+
+Agent 处理方式：
+1. **不要默认选第一个** — 项目搞错会查到错的人力数据
+2. 将 CLI 列出的候选项目（含 ID 和完整名称）展示给用户
+3. 用户指定后，**用数字 ID 重试**
+
+## 过滤字段的模糊匹配
+
+`--department` / `--role` / `--area-code` / `--mp-type` 是**子串过滤器**（不区分大小写），多匹配是 feature 而非错误。
+
+Agent 行为约定：
+1. 执行命令后**主动告诉用户**匹配到了哪几个部门/角色/地域
+2. 如果匹配范围超出预期，**主动询问**是否需要更精确的子串
+
+## 写入安全约定
+
+1. **所有写入默认仅预览** — `fill` 和 `import` 需加 `--apply` 才实际执行
+2. 先不带 `--apply` 运行，向用户展示变化的 diff
+3. 获得用户明确确认后再加 `--apply`
+4. 写入后可通过 `atlas undo` 撤销
 
 ## 推荐 Agent 工作流
 
-1. **检查会话**。运行 `auth status`。若无会话，中止并让用户
-   运行 `auth login`（它会打开浏览器 — Agent 无法解决 2FA）。
-2. **始终先用 `list` 或 `export --format json`** 向用户展示
-   当前状态再提出变更。
-3. **模板化更新**：向用户要模板路径或在 `examples/` 起草一个，
-   然后 `fill ... --out` → 展示暂存差异 → 询问后再 `--apply`。
-4. **Excel 导入**：先预览，显示列报告，若列不匹配则修复表格，
-   然后 `--apply` 并明确获得用户同意。
-5. **错误**：
-   - `SessionExpiredError` → 会话失效，让用户重新运行 `auth login`。
-   - `BanmaApiError` 带 `errCode` / `errorMsg` → 展示给用户；不要
-     盲目重试。
-   - 网络 / 5xx → 客户端已带指数退避重试；若仍失败，报告并中止。
+1. **检查环境和会话**
+   - 确认 `atlas` 命令可用（ `atlas --help` ）
+   - `atlas auth status` — 若无会话，让用户运行 `atlas auth login`
+   - 确认项目 ID（已有则用，否则 `atlas projects` 查找）
 
-## 文件布局（调试参考）
+2. **读取数据展示给用户**
+   - `atlas baseline month --project-id <id>` 是最常用命令
+   - 需要高层汇总用 `atlas baseline summary`
+   - 看实际工时用 `atlas actual ...`
+   - 做对比用 `atlas compare`
 
-- `adapters/atlas/cli.ts` — Commander 入口
-- `adapters/atlas/auth/` — Playwright 登录 + keytar 会话
-- `adapters/atlas/http/client.ts` — undici 客户端，信封解包
-- `adapters/atlas/schema/` — zod 模型（`LinePlan`、`Envelope`…）
-- `adapters/atlas/commands/` — `list`、`show`、`export`、`fill`、`import`、`auth`
-- `adapters/atlas/dict/` — 字典 + 部门缓存
-- `docs/recon/mpline.md` — 端点目录 + 认证模型 + 写入契约
-- `prompts/atlas-cli.md` — 原始 RISEN 规范
-- `examples/template.j2`、`examples/sample.xlsx` — 参考输入
+3. **利用自省能力**
+   - 不确定参数时：`atlas <command> --describe`
+   - 想了解完整能力：`atlas schema commands --json`
+   - 想查字典值：`atlas schema export`
 
-## 已知限制
+4. **写入操作**
+   - 模板 → `atlas baseline fill --template ... --out` → 展示 diff →  `--apply`
+   - Excel → `atlas baseline import --file ...` → 展示列报告 → `--apply`
+   - 出错 → `atlas undo <token>` 回滚
 
-- **无原生单条详情端点**。`show` 在客户端过滤列表。可以接受，
-  因为 `line/plan/select.json` 一次返回项目中全部数据。
-- **未观察分页**。后端可能接受 `pageNum` / `pageSize`
-  （存在向前兼容标志）但尚未针对大项目确认。若遇到数千行，
-  假设单次获取可以之前先与用户确认。
-- **Parquet 导出** 是 `NotImplementedError` — 故意跳过重量依赖。
-- **字典/部门缓存** 有 24 h TTL。传递 `--refresh-dictionary`
-  （TODO，尚未接入）或删除 `~/.cache/atlas/` 强制刷新。
-- **写入端点**（`save`、`delete`、`import`）通过
-  SPA 包静态分析发现，而非运行时捕获。`save` 的确切请求体
-  形状是推断的；在批量操作前先用低风险项目确认一次 `--apply`。
-
-## Agent 调用模板
-
-```
-cd /Users/scottwang/Documents/Workspace/Atlas-Cli
-atlas <command> [options]
-```
-
-始终前缀 `cd` 使 Keychain 会话路径解析生效。CLI 任何错误则
-非零退出；声明成功前检查退出码。
+5. **错误处理**
+   - 退出码 2（会话过期） → 让用户重跑 `atlas auth login`
+   - 退出码 3（API 错误） → 展示 `errCode` + `errorMsg`，不要盲目重试
+   - 退出码 64（配置错误） → 可能有 `details` 字段含候选列表
+   - 网络 5xx → CLI 已有指数退避重试，持续失败则报告并中止

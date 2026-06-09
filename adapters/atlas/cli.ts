@@ -13,10 +13,8 @@ import {
   projectsCmd,
 } from './commands/project/index.js';
 
-// Baseline commands (list, show, month, summary, export, fill, import)
+// Baseline commands (month, summary, export, fill, import)
 import {
-  listCmd as baselineListCmd,
-  showCmd as baselineShowCmd,
   monthCmd as baselineMonthCmd,
   summaryCmd as baselineSummaryCmd,
   exportCmd as baselineExportCmd,
@@ -26,7 +24,6 @@ import {
 
 // Actual commands (list, show, month, summary, export)
 import {
-  listCmd as actualListCmd,
   showCmd as actualShowCmd,
   monthCmd as actualMonthCmd,
   summaryCmd as actualSummaryCmd,
@@ -122,7 +119,7 @@ function emitDescribe(cmd: Command): void {
     options: cmd.options.map((o) => ({
       flags: o.flags,
       description: o.description ?? '',
-      required: o.required ?? false,
+      required: o.mandatory ?? false,
       ...(o.defaultValue !== undefined ? { default: o.defaultValue } : {}),
     })),
     args:
@@ -182,7 +179,7 @@ function registerProjectCommands(program: Command): void {
   program
     .command('find <kind> <query>')
     .description(
-      '搜索项目/部门/字典值（kind: project|department|mp-type|line-plan-type|src-type|area-code）',
+      '搜索项目/部门/字典值（kind: project|department|mp-type|line-plan-type|area-code）',
     )
     .option('--json', '输出 JSON 信封')
     .option('--refresh', '刷新字典/部门/项目缓存')
@@ -244,38 +241,6 @@ function registerProjectCommands(program: Command): void {
 function registerBaselineCommands(program: Command): void {
   const base = program.command('baseline').description('基线（计划）人力数据');
 
-  // atlas baseline list
-  addProjectOptions(
-    base
-      .command('list')
-      .description('列出项目中的基线条目'),
-  )
-    .option('--json', '输出 JSON')
-    .option('--page <n>', '页码')
-    .option('--page-size <n>', '每页数量')
-    .action(async (opts) => {
-      try {
-        await baselineListCmd(opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
-
-  // atlas baseline show
-  addProjectOptions(
-    base
-      .command('show <itemId>')
-      .description('显示单个基线条目'),
-  )
-    .option('--json', '输出 JSON')
-    .action(async (itemId: string, opts) => {
-      try {
-        await baselineShowCmd(itemId, opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
-
   // atlas baseline month
   addProjectOptions(
     base
@@ -287,6 +252,7 @@ function registerBaselineCommands(program: Command): void {
     .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
     .option('--area-code <code>', '按地域筛选（子串，不区分大小写）')
     .option('--mp-type <type>', '按人力类型筛选（子串，不区分大小写）')
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，与 --from/--to 互斥）')
     .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
     .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
     .option('--all-months', '显示所有月份（默认：只显示有人力的月份）')
@@ -305,6 +271,10 @@ function registerBaselineCommands(program: Command): void {
       .description('按月/部门/角色汇总基线人力投入'),
   )
     .option('--by <axis>', 'month | department | role', 'month')
+    .option('--department <name>', '按部门名称/ID 筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
+    .option('--area-code <code>', '按地域筛选（子串，不区分大小写）')
+    .option('--mp-type <type>', '按人力类型筛选（子串，不区分大小写）')
     .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
     .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
     .option('--json', '输出 JSON')
@@ -324,6 +294,10 @@ function registerBaselineCommands(program: Command): void {
   )
     .requiredOption('--format <fmt>', 'csv | json | parquet')
     .requiredOption('--out <path>', '输出文件路径')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
+    .option('--department <name>', '按部门名称/ID 筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
     .option('--since <iso>', '仅导出指定时间后修改的条目（ISO 时间戳）')
     .option('--json', '输出 JSON 信封（结果摘要）')
     .action(async (opts) => {
@@ -379,35 +353,13 @@ function registerBaselineCommands(program: Command): void {
 function registerActualCommands(program: Command): void {
   const base = program.command('actual').description('实际人力数据');
 
-  // atlas actual list
-  addProjectOptions(
-    base
-      .command('list')
-      .description('实际工时明细（人员×周透视表）'),
-  )
-    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
-    .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
-    .option('--department <name>', '按团队负责人/部门筛选（子串，不区分大小写）')
-    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
-    .option('--staff-name <name>', '按姓名/工号筛选（子串，不区分大小写）')
-    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含）')
-    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含）')
-    .option('--json', '输出 JSON 信封')
-    .action(async (opts) => {
-      try {
-        await actualListCmd(opts);
-      } catch (e) {
-        handleError(e);
-      }
-    });
-
   // atlas actual show <staffId>
   addProjectOptions(
     base
       .command('show <staffId>')
       .description('查看单个人员的实际工时明细'),
   )
-    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当前月）')
     .option('--json', '输出 JSON 信封')
     .action(async (staffId: string, opts) => {
       try {
@@ -421,13 +373,15 @@ function registerActualCommands(program: Command): void {
   addProjectOptions(
     base
       .command('month')
-      .description('按月查看实际人力投入'),
+      .description('实际工时明细（人员×周透视表）。无参数时默认查当前自然年'),
   )
-    .option('--month <yyyymm>', '查询月份（YYYY-MM，默认当月）')
+    .option('--month <yyyymm>', '查询月份（YYYY-MM，与 --from/--to 互斥）')
+    .option('--from <yyyymm>', '起始月份（YYYY-MM，包含，与 --month 互斥）')
+    .option('--to <yyyymm>', '结束月份（YYYY-MM，包含，与 --month 互斥）')
     .option('--status <status>', '筛选审批状态: pending | approved | all', 'all')
-    .option('--department <name>', '按团队负责人/部门筛选')
-    .option('--role <name>', '按角色/备注筛选')
-    .option('--staff-name <name>', '按姓名/工号筛选')
+    .option('--department <name>', '按团队负责人/部门筛选（子串，不区分大小写）')
+    .option('--role <name>', '按角色/备注筛选（子串，不区分大小写）')
+    .option('--staff-name <name>', '按姓名/工号筛选（子串，不区分大小写）')
     .option('--json', '输出 JSON 信封')
     .action(async (opts) => {
       try {
@@ -629,5 +583,23 @@ export function buildProgram(): Command {
 // that path it sets ATLAS_SKIP_AUTORUN=1 to prevent the second auto-run.
 if (process.env.ATLAS_SKIP_AUTORUN !== '1') {
   const program = buildProgram();
+
+  // Intercept --describe before parseAsync to bypass Commander's
+  // requiredOption validation (Commander fires that before preAction).
+  if (process.argv.includes('--describe')) {
+    const rest = process.argv.slice(2).filter(
+      (a) => a !== '--describe' && !a.startsWith('--json'),
+    );
+    let cmd: Command = program;
+    for (const word of rest) {
+      if (word.startsWith('-')) break;
+      const child = cmd.commands.find((c) => c.name() === word);
+      if (!child) break;
+      cmd = child;
+    }
+    emitDescribe(cmd);
+    process.exit(0);
+  }
+
   program.parseAsync(process.argv).catch(handleError);
 }

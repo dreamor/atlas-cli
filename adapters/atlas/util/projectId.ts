@@ -48,6 +48,17 @@ export async function resolveProjectIdAsync(
   if (!trimmed) {
     const link = await readLink();
     if (link) {
+      // If the link file doesn't have the project name (e.g. linked by
+      // numeric id), try to resolve it from the catalog.
+      if (link.projectName === undefined) {
+        try {
+          const catalog = await loadProjectCatalog(client, opts);
+          const match = catalog.find((p) => String(p.id) === link.projectId);
+          if (match) {
+            return { id: link.projectId, name: match.name, fromLink: true };
+          }
+        } catch { /* serve name-less link as fallback */ }
+      }
       return {
         id: link.projectId,
         ...(link.projectName !== undefined ? { name: link.projectName } : {}),
@@ -62,11 +73,15 @@ export async function resolveProjectIdAsync(
     );
   }
 
+  const catalog = await loadProjectCatalog(client, opts);
+
   if (/^[0-9]+$/.test(trimmed)) {
-    return { id: trimmed };
+    // Also try to resolve the name from the catalog so downstream
+    // commands can display a human-friendly project label.
+    const match = catalog.find((p) => String(p.id) === trimmed);
+    return { id: trimmed, ...(match ? { name: match.name } : {}) };
   }
 
-  const catalog = await loadProjectCatalog(client, opts);
   const result = resolveProjectIdFromName(catalog, trimmed);
 
   if (result.kind === 'resolved') {

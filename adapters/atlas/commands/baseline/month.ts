@@ -20,6 +20,7 @@ export interface MonthCmdOpts {
   readonly role?: string;
   readonly areaCode?: string;
   readonly mpType?: string;
+  readonly month?: string;
   readonly from?: string;
   readonly to?: string;
   readonly refreshProjects?: boolean;
@@ -36,8 +37,13 @@ function validateMonth(label: string, val: string | undefined): void {
 }
 
 export async function monthCmd(opts: MonthCmdOpts): Promise<void> {
+  validateMonth('--month', opts.month);
   validateMonth('--from', opts.from);
   validateMonth('--to', opts.to);
+
+  // --month maps to from=month, to=month
+  const from = opts.month ?? opts.from;
+  const to = opts.month ?? opts.to;
 
   const client = await getClientOrExit();
   const resolved = await resolveProjectIdAsync(opts.projectId, client, {
@@ -59,7 +65,7 @@ export async function monthCmd(opts: MonthCmdOpts): Promise<void> {
   );
   let pivot = pivotMonths(
     filtered,
-    { from: opts.from, to: opts.to },
+    { from, to },
     resolveDepartment,
   );
 
@@ -98,9 +104,7 @@ export async function monthCmd(opts: MonthCmdOpts): Promise<void> {
         // eslint-disable-next-line no-console
         console.log(renderPivotTable(pivot));
         // eslint-disable-next-line no-console
-        console.log(
-          `\n${pivot.rows.length} row(s) across ${pivot.monthColumns.length} month(s) in ${projLabel}`,
-        );
+        console.log(`\n${pivot.rows.length} 行，${pivot.monthColumns.length} 个月 — ${projLabel}`);
       },
     },
   );

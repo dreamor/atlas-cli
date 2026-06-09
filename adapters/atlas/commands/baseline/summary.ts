@@ -6,6 +6,7 @@ import { resolveProjectIdAsync } from '../../util/projectId.js';
 import { ConfigError } from '../../util/errors.js';
 import { printResult } from '../../util/output.js';
 import {
+  applyRowFilter,
   renderSummaryTable,
   summarizeMonths,
   type DepartmentResolver,
@@ -16,6 +17,10 @@ export interface SummaryCmdOpts {
   readonly projectId?: string;
   readonly json?: boolean;
   readonly by?: string;
+  readonly department?: string;
+  readonly role?: string;
+  readonly areaCode?: string;
+  readonly mpType?: string;
   readonly from?: string;
   readonly to?: string;
   readonly refreshProjects?: boolean;
@@ -57,7 +62,13 @@ export async function summaryCmd(opts: SummaryCmdOpts): Promise<void> {
   const resolveDepartment: DepartmentResolver = (id) =>
     resolveDept(depts, (id ?? null) as string | number | null) ?? '';
 
-  const entries = summarizeMonths(items, {
+  const filtered = applyRowFilter(
+    items,
+    { department: opts.department, role: opts.role, areaCode: opts.areaCode, mpType: opts.mpType },
+    resolveDepartment,
+  );
+
+  const entries = summarizeMonths(filtered, {
     by: axis,
     filter: { from: opts.from, to: opts.to },
     resolveDepartment,
@@ -81,7 +92,8 @@ export async function summaryCmd(opts: SummaryCmdOpts): Promise<void> {
         // eslint-disable-next-line no-console
         console.log(renderSummaryTable(axis, entries));
         // eslint-disable-next-line no-console
-        console.log(`\n${entries.length} bucket(s) by ${axis} in ${projLabel}`);
+        const unit = axis === 'month' ? '个月' : axis === 'department' ? '个部门' : '种角色';
+        console.log(`\n共 ${entries.length} ${unit}（按${axis === 'month' ? '月份' : axis === 'department' ? '部门' : '角色'}汇总）— ${projLabel}`);
       },
     },
   );

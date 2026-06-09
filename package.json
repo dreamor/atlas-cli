@@ -1,6 +1,6 @@
 {
   "name": "atlas-cli",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Atlas CLI - 斑马云图人力基线管理工具",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && chmod +x dist/adapters/atlas/cli.js",
     "lint": "tsc --noEmit --pretty false",
     "lint:watch": "tsc --noEmit --pretty false --watch",
     "test": "vitest run",

@@ -120,6 +120,7 @@ function Ensure-Node {
       if ([int]$Matches[1] -ge 20) {
         Write-Log "system node $v found — using it"
         $script:AtlasNodeBin = Split-Path -Parent (Get-Command node).Path
+        Install-NpmShims
         return
       }
       Write-Warn2 "system node $v is too old (need >=20), installing vendored copy"
@@ -130,6 +131,7 @@ function Ensure-Node {
   if (Test-Path $vendoredNode) {
     Write-Log "vendored node already at $AtlasRuntime\node"
     $script:AtlasNodeBin = Join-Path $AtlasRuntime 'node'
+    Install-NpmShims
     return
   }
 
@@ -143,7 +145,41 @@ function Ensure-Node {
   $extracted = Join-Path $AtlasRuntime $folder
   Move-Item $extracted (Join-Path $AtlasRuntime 'node') -Force
   $script:AtlasNodeBin = Join-Path $AtlasRuntime 'node'
+  Install-NpmShims
   Write-Log "Node installed at $AtlasRuntime\node"
+}
+
+# Create wrapper .cmd files in $AtlasBin that reference the real node bin dir.
+# We cannot simply copy npm.cmd/npx.cmd because they use %~dp0 relative
+# paths internally and would break when moved elsewhere.
+function Install-NpmShims {
+  $binDir = $script:AtlasNodeBin
+  $targetDir = $AtlasBin
+
+  # node.exe — standalone binary, safe to copy
+  $srcNode = Join-Path $binDir 'node.exe'
+  $dstNode = Join-Path $targetDir 'node.exe'
+  if ((Test-Path $srcNode) -and -not (Test-Path $dstNode)) {
+    Copy-Item $srcNode $dstNode -Force
+    Write-Log "copied node.exe → $dstNode"
+  }
+
+  # npm.cmd / npx.cmd — wrap with absolute path to avoid %~dp0 breakage
+  foreach ($cmd in @('npm', 'npx')) {
+    $src = Join-Path $binDir "$cmd.cmd"
+    $dst = Join-Path $targetDir "$cmd.cmd"
+    if ((Test-Path $src) -and -not (Test-Path $dst)) {
+      $realBin = $binDir.Replace('\', '\\')
+      $wrapper = "@echo off`r`n\"$realBin\\$cmd.cmd\" %*"
+      [System.IO.File]::WriteAllText($dst, $wrapper, [System.Text.Encoding]::ASCII)
+      Write-Log "wrote $cmd wrapper → $dst (points to $binDir)"
+    }
+  }
+
+  # Add $AtlasBin to PATH for this session so npm/npx are resolvable
+  if ($env:Path -notlike "*$targetDir*") {
+    $env:Path = "$targetDir;$env:Path"
+  }
 }
 
 function Ensure-Playwright {

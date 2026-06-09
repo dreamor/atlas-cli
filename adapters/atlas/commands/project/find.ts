@@ -7,10 +7,9 @@
  * which prefers exact-then-fuzzy):
  *   - project        (项目搜索)
  *   - department     (部门搜索)
- *   - mp-type        (人力类型搜索)
- *   - line-plan-type (计划类型搜索)
- *   - src-type       (来源类型搜索)
- *   - area-code      (地区编码搜索)
+ *   - mp-type        (人力类型搜索：斑马、智软)
+ *   - line-plan-type (线计划类型搜索：座舱、AI、语音)
+ *   - area-code      (地区编码搜索：北上杭、合肥)
  */
 
 import { getClientOrExit } from '../_client.js';
@@ -25,7 +24,6 @@ export type FindKind =
   | 'department'
   | 'mp-type'
   | 'line-plan-type'
-  | 'src-type'
   | 'area-code';
 
 const VALID_KINDS: ReadonlySet<FindKind> = new Set([
@@ -33,16 +31,14 @@ const VALID_KINDS: ReadonlySet<FindKind> = new Set([
   'department',
   'mp-type',
   'line-plan-type',
-  'src-type',
   'area-code',
 ]);
 
 /** Dictionary `type` ids used by Banma. Verified empirically from the cache. */
 const DICT_TYPE_BY_KIND: Record<Exclude<FindKind, 'project' | 'department'>, string> = {
-  'mp-type': 'mpType',
-  'line-plan-type': 'linePlanType',
-  'src-type': 'srcType',
-  'area-code': 'areaCode',
+  'mp-type': '13',
+  'line-plan-type': '10',
+  'area-code': '12',
 };
 
 export interface FindCandidate {

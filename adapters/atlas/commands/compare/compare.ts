@@ -360,12 +360,13 @@ export async function compareCmd(opts: CompareCmdOpts): Promise<void> {
           grandDiffPercent: result.grandDiffPercent,
         }));
         // eslint-disable-next-line no-console
+        const cmpUnit = result.axis === 'month' ? '个月' : result.axis === 'department' ? '个部门' : '种角色';
         console.log(
-          `\n${displayEntries.length} bucket(s) by ${result.axis} in ${projLabel}`,
+          `\n共 ${displayEntries.length} ${cmpUnit}（按${result.axis === 'month' ? '月份' : result.axis === 'department' ? '部门' : '角色'}对比）— ${projLabel}`,
         );
         // eslint-disable-next-line no-console
         console.log(
-          `Baseline total: ${result.baselineTotal}h | Actual total: ${result.actualTotal}h | Diff: ${result.grandDiff > 0 ? '+' : ''}${result.grandDiff}h (${result.grandDiffPercent > 0 ? '+' : ''}${result.grandDiffPercent.toFixed(1)}%)`,
+          `基线: ${result.baselineTotal} 人月 | 实际: ${result.actualTotal.toFixed(2)} 人月 | 差异: ${result.grandDiff > 0 ? '+' : ''}${result.grandDiff.toFixed(2)} 人月 (${result.grandDiffPercent > 0 ? '+' : ''}${result.grandDiffPercent.toFixed(1)}%)`,
         );
         if (pageMeta && pageMeta.totalPages > 1) {
           // eslint-disable-next-line no-console

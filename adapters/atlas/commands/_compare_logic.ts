@@ -94,8 +94,8 @@ function groupActualEntries(
   const map = new Map<string, number>();
   for (const e of entries) {
     const prev = map.get(e.key) ?? 0;
-    // 人天 → 人月（1 人月 = 22 工作日）
-    map.set(e.key, prev + e.total / PERSON_MONTHS_TO_DAYS);
+    // Note: e.total is already in 人月 (converted upstream by parseManpower /22)
+    map.set(e.key, prev + e.total);
   }
   return map;
 }
@@ -241,9 +241,9 @@ export function renderCompareTable(
 
   const headerCols = [
     headerLabel,
-    'baseline(h)',
-    'actual(h)',
-    'diff(h)',
+    'baseline(人月)',
+    'actual(人月)',
+    'diff(人月)',
     'diff%',
     'flag',
   ];
