@@ -3,15 +3,19 @@
  *
  * 展示每个人员在指定月份/月份范围内的实际工时数据。无参数时默认查
  * 当前自然年，行为对齐 `atlas baseline month`。
+ *
+ * 使用新 API（summaryByTeam）获取数据，已是人月，无需 /22 转换。
+ * 默认按业务规则过滤：过去月份只显示已确认，当前月份显示所有已填数据。
  */
 import { getClientOrExit } from '../_client.js';
-import { fetchManpowerConfirm } from '../_manhours.js';
+import { fetchWeeklySummary } from '../_manhours.js';
 import { resolveProjectIdAsync } from '../../util/projectId.js';
 import { ConfigError } from '../../util/errors.js';
 import { printResult } from '../../util/output.js';
 import {
-  flattenManpowerTree,
+  flattenWeeklySummary,
   filterActualRows,
+  filterActualByBusinessRule,
   pivotActualRows,
   renderActualPivotTable,
   type ActualFilter,
@@ -78,6 +82,7 @@ export async function monthCmd(opts: ActualMonthCmdOpts): Promise<void> {
   validateMonth('--to', opts.to);
 
   const statusFilter = parseStatusFilter(opts.status);
+  const hasExplicitStatus = opts.status !== undefined && opts.status !== '';
 
   const client = await getClientOrExit();
   const session = await loadSession();
@@ -104,41 +109,37 @@ export async function monthCmd(opts: ActualMonthCmdOpts): Promise<void> {
     months = monthRange(`${year}-01`, `${year}-12`);
   }
 
-  // Fetch all months × 2 statuses, batched to avoid overwhelming the API.
-  // Gracefully skip months that return 500 (no data).
-  const results: Array<{ month: string; status: number; result?: Awaited<ReturnType<typeof fetchManpowerConfirm>> }> = [];
-  const tasks =
-    months.flatMap((m) =>
-      ([0, 1] as const).map((status) =>
-        () => fetchManpowerConfirm(client, {
-          projectId,
-          month: m,
-          staffId: session.empId,
-          status,
-        })
-          .then((r) => ({ month: m, status, result: r }))
-          .catch(() => ({ month: m, status, result: undefined })),
-      ),
-    );
-  for (let i = 0; i < tasks.length; i += 6) {
-    const batch = await Promise.all(tasks.slice(i, i + 6).map((fn) => fn()));
-    results.push(...batch);
+  // Fetch each month via new API (single call per month, no status split)
+  const results: Array<{ month: string; rows: ReturnType<typeof flattenWeeklySummary> }> = [];
+  for (const m of months) {
+    try {
+      const result = await fetchWeeklySummary(client, {
+        month: m,
+        staffId: session.empId,
+      });
+      const rows = flattenWeeklySummary(result.data ?? []);
+      results.push({ month: m, rows });
+    } catch {
+      // Silently skip months that error (no data)
+    }
   }
 
-  // Merge rows across months, dedup by staffId (approved > pending)
-  const staffMap = new Map<string, ReturnType<typeof flattenManpowerTree>[number]>();
-  for (const { status, result } of results) {
-    if (!result) continue;
-    const rows = flattenManpowerTree(result.teamMp ?? [], '', '', status);
+  // Merge rows across months, dedup by staffId
+  const staffMap = new Map<string, (typeof results)[number]['rows'][number]>();
+  for (const { rows } of results) {
     for (const row of rows) {
-      const existing = staffMap.get(row.staffId);
-      if (existing && existing.status >= status) continue;
+      // Later month entries override earlier ones (same behavior as old multi-month)
       staffMap.set(row.staffId, row);
     }
   }
-  const allRows = [...staffMap.values()];
+  let allRows = [...staffMap.values()];
 
-  // Apply filters
+  // Apply business-rule filter by default; explicit --status skips it
+  if (!hasExplicitStatus) {
+    allRows = [...filterActualByBusinessRule(allRows)];
+  }
+
+  // Apply explicit filters
   const filter: ActualFilter = {
     department: opts.department,
     role: opts.role,
@@ -152,13 +153,12 @@ export async function monthCmd(opts: ActualMonthCmdOpts): Promise<void> {
   const monthTo = opts.to ?? months[months.length - 1]!;
   const pivot = pivotActualRows(filtered, { from: monthFrom, to: monthTo });
 
-  // Sum totals
+  // Compute totals from flattened rows
   let totalHc = 0;
   let totalMp = 0;
-  for (const { result } of results) {
-    if (!result) continue;
-    totalHc = Math.max(totalHc, result.hc ?? 0);
-    totalMp = Math.max(totalMp, result.mp ?? 0);
+  for (const row of filtered) {
+    totalHc += row.headcount;
+    totalMp += row.total;
   }
 
   const projLabel = resolved.name
@@ -187,7 +187,7 @@ export async function monthCmd(opts: ActualMonthCmdOpts): Promise<void> {
         role: r.role,
         teamLeadId: r.teamLeadId,
         teamLeadName: r.teamLeadName,
-        status: r.status === 1 ? 'approved' : 'pending',
+        status: r.status === 2 ? 'confirmed' : r.status === 1 ? 'approved' : 'pending',
         weekHours: r.weekHours,
         total: r.total,
         headcount: r.headcount,

@@ -99,90 +99,44 @@ export const DepartmentSchema = z
 export type Department = z.infer<typeof DepartmentSchema>;
 
 // ---------------------------------------------------------------------------
-// Manpower (Actual Hours) — /yuntu-service/yida/manpower/
+// Manpower (Actual Hours) — 旧 API 类型保留（测试 fixture 仍使用）
 // ---------------------------------------------------------------------------
 
-/** Manpower confirmation entry within a staff node from
- * `getProjMpConfirmDetail.json`. May be null when no data exists.
- *
- * Each entry represents a half-month cycle with hours and remarks.
- * Key fields: `manpower` (hours), `month` (epoch ms), `cycle` (1 or 3). */
-export const ManpowerWeeklyActualSchema = z
-  .object({
-    id: z.union([z.number(), z.string()]).optional().nullable(),
-    gmtCreate: z.union([z.number(), z.string()]).optional().nullable(),
-    gmtModified: z.union([z.number(), z.string()]).optional().nullable(),
-    staffId: z.union([z.number(), z.string()]).optional().nullable(),
-    realname: z.string().optional().nullable(),
-    bossId: z.string().optional().nullable(),
-    /** Actual manpower hours for this cycle. */
-    manpower: z.union([z.number(), z.string()]).optional().nullable(),
-    /** Cycle within the month (1 = first half, 3 = second half typically). */
-    cycle: z.union([z.number(), z.string()]).optional().nullable(),
-    /** Month as epoch ms timestamp. */
-    month: z.union([z.number(), z.string()]).optional().nullable(),
-    isDeleted: z.union([z.number(), z.boolean(), z.string()]).optional().nullable(),
-    /** Legacy field — may contain week start date (epoch ms). */
-    week: z.union([z.number(), z.string()]).optional().nullable(),
-    /** Legacy field — may contain actual manpower hours. */
-    actualManpower: z.union([z.number(), z.string()]).optional().nullable(),
-    /** Legacy field — week start date. */
-    startDate: z.union([z.number(), z.string()]).optional().nullable(),
-    /** Legacy field — week end date. */
-    endDate: z.union([z.number(), z.string()]).optional().nullable(),
-    confirmDate: z.union([z.number(), z.string()]).optional().nullable(),
-    confirmStaffId: z.string().optional().nullable(),
-    confirmStatus: z.union([z.number(), z.string()]).optional().nullable(),
-    departmentId: z.string().optional().nullable(),
-    departmentName: z.string().optional().nullable(),
-    projectId: z.union([z.number(), z.string()]).optional().nullable(),
-    projectName: z.string().optional().nullable(),
-    category: z.string().optional().nullable(),
-    subCategory: z.string().optional().nullable(),
-    status: z.union([z.number(), z.string()]).optional().nullable(),
-    isConvert: z.union([z.number(), z.boolean(), z.string()]).optional().nullable(),
-    /** Work description / remark. */
-    remark: z.string().optional().nullable(),
-    refuseRemark: z.string().optional().nullable(),
-    except: z.boolean().optional().nullable(),
-  })
-  .passthrough();
+/**
+ * @deprecated 仅用于旧测试 fixture 中模拟 `flattenManpowerTree` 输入。
+ * 新命令使用 `WeeklySummaryNode` / `WeeklySummaryDetail` 及 `flattenWeeklySummary`。
+ */
 
-export type ManpowerWeeklyActual = z.infer<typeof ManpowerWeeklyActualSchema>;
-
-/** Recursive tree node for team/staff from `getProjMpConfirmDetail.json`.
- * Group nodes have `c` (children); leaf nodes have `weeklyActuals`. */
-export const ManpowerTreeNodeSchema: z.ZodType<ManpowerTreeNode> = z.lazy(() =>
-  z
-    .object({
-      /** Parent group info (usually null at top level). */
-      p: z.unknown().optional().nullable(),
-      /** Children (sub-teams or individuals). */
-      c: z.array(ManpowerTreeNodeSchema).optional().nullable(),
-      /** Staff ID (工号). */
-      d: z.string().optional().nullable(),
-      /** Display name in "姓名 - 工号" format. */
-      n: z.string().optional().nullable(),
-      /** Role / remark. */
-      r: z.string().optional().nullable(),
-      /** Total hours / subtotal for this node. */
-      t: z.number().optional().nullable(),
-      /** Headcount (string-formatted number). */
-      h: z.string().optional().nullable(),
-      /** Month status/metadata. */
-      m: z.string().optional().nullable(),
-      /** Approval status (1 = approved, seen on some leaf nodes). */
-      s: z.number().optional().nullable(),
-      /** Weekly actual hours data (null when no data submitted). */
-      weeklyActuals: z.union([
-        z.array(ManpowerWeeklyActualSchema),
-        z.null(),
-      ]).optional().nullable(),
-      /** Historical manpower changes. */
-      historyManpower: z.string().optional().nullable(),
-    })
-    .passthrough(),
-);
+export interface ManpowerWeeklyActual {
+  id?: number | string | null;
+  gmtCreate?: number | string | null;
+  gmtModified?: number | string | null;
+  staffId?: number | string | null;
+  realname?: string | null;
+  bossId?: string | null;
+  manpower?: number | string | null;
+  cycle?: number | string | null;
+  month?: number | string | null;
+  week?: number | string | null;
+  actualManpower?: number | string | null;
+  startDate?: number | string | null;
+  endDate?: number | string | null;
+  confirmDate?: number | string | null;
+  confirmStaffId?: string | null;
+  confirmStatus?: number | string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  projectId?: number | string | null;
+  projectName?: string | null;
+  category?: string | null;
+  subCategory?: string | null;
+  status?: number | string | null;
+  isConvert?: number | boolean | string | null;
+  remark?: string | null;
+  refuseRemark?: string | null;
+  except?: boolean | null;
+  [key: string]: unknown;
+}
 
 export interface ManpowerTreeNode {
   p?: unknown;
@@ -199,21 +153,13 @@ export interface ManpowerTreeNode {
   [key: string]: unknown;
 }
 
-/** Top-level response from `getProjMpConfirmDetail.json`. */
-export const ManpowerConfirmResultSchema = z
-  .object({
-    /** Total headcount. */
-    hc: z.number().optional().nullable(),
-    /** Total manpower (approved hours?). */
-    mp: z.number().optional().nullable(),
-    /** Project-level manpower entries (may be empty). */
-    projMp: z.array(z.unknown()).optional().nullable(),
-    /** Team tree with nested staff/weekly hours. */
-    teamMp: z.array(ManpowerTreeNodeSchema).optional().nullable(),
-  })
-  .passthrough();
-
-export type ManpowerConfirmResult = z.infer<typeof ManpowerConfirmResultSchema>;
+export interface ManpowerConfirmResult {
+  hc?: number | null;
+  mp?: number | null;
+  projMp?: unknown[] | null;
+  teamMp?: ManpowerTreeNode[] | null;
+  [key: string]: unknown;
+}
 
 /** /user/info data shape. */
 export const UserInfoSchema = z
@@ -228,3 +174,80 @@ export const UserInfoSchema = z
   .passthrough();
 
 export type UserInfo = z.infer<typeof UserInfoSchema>;
+
+// ---------------------------------------------------------------------------
+// Weekly Summary (新 API) — /yuntu-service/manpower/weekly/summaryByTeam.json
+// ---------------------------------------------------------------------------
+
+/** 明细条目：人员在某项目某周期的实际投入。 */
+export const WeeklySummaryDetailSchema = z.object({
+  id: z.number().optional().nullable(),
+  gmtCreate: z.union([z.number(), z.string()]).optional().nullable(),
+  gmtModified: z.union([z.number(), z.string()]).optional().nullable(),
+  staffId: z.string().optional().nullable(),
+  realname: z.string().optional().nullable(),
+  bossId: z.string().optional().nullable(),
+  manpower: z.number(),             // 人月
+  cycle: z.number(),                // 1-4
+  month: z.number(),                // epoch ms
+  isDeleted: z.union([z.number(), z.boolean(), z.string()]).optional().nullable(),
+  projectId: z.number().optional().nullable(),
+  projectName: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
+  subCategory: z.string().optional().nullable(),
+  status: z.number().optional().nullable(),  // 0=已填, 2=已确认
+  isConvert: z.union([z.number(), z.boolean(), z.string()]).optional().nullable(),
+  remark: z.string().optional().nullable(),
+  refuseRemark: z.string().optional().nullable(),
+  confirmStaffId: z.string().optional().nullable(),
+  confirmStatus: z.union([z.number(), z.string()]).optional().nullable(),
+  except: z.boolean().optional().nullable(),
+}).passthrough();
+
+export type WeeklySummaryDetail = z.infer<typeof WeeklySummaryDetailSchema>;
+
+/** 团队/成员节点（递归树）。 */
+export const WeeklySummaryNodeSchema: z.ZodType<WeeklySummaryNode> = z.lazy(() =>
+  z.object({
+    staffId: z.string(),
+    realname: z.string(),
+    manpower: z.number(),           // 团队合计人月
+    status: z.unknown().optional().nullable(),
+    detail: z.array(WeeklySummaryDetailSchema).optional().nullable(),
+    isExcept: z.boolean().optional(),
+    hc: z.number().optional().nullable(),
+    cycleHc: z.record(z.number()).optional().nullable(),
+    children: z.array(WeeklySummaryNodeSchema).optional().nullable(),
+    role: z.string().optional().nullable(),
+    department: z.string().optional().nullable(),
+    locationDesc: z.string().optional().nullable(),
+  }).passthrough(),
+);
+
+export interface WeeklySummaryNode {
+  staffId: string;
+  realname: string;
+  manpower: number;
+  status?: unknown;
+  detail?: WeeklySummaryDetail[] | null;
+  isExcept?: boolean;
+  hc?: number | null;
+  cycleHc?: Record<string, number> | null;
+  children?: WeeklySummaryNode[] | null;
+  role?: string | null;
+  department?: string | null;
+  locationDesc?: string | null;
+  [key: string]: unknown;
+}
+
+/** 顶层响应。 */
+export const WeeklySummaryResultSchema = z.object({
+  status: z.union([z.number(), z.string()]).optional(),
+  code: z.union([z.number(), z.string()]).optional(),
+  errCode: z.string().optional().nullable(),
+  errorMsg: z.string().optional().nullable(),
+  success: z.boolean().optional(),
+  data: z.array(WeeklySummaryNodeSchema),
+}).passthrough();
+
+export type WeeklySummaryResult = z.infer<typeof WeeklySummaryResultSchema>;

@@ -67,7 +67,7 @@ atlas
 - **Daemon Mode**: 沙盒环境下运行的 HTTP 守护进程，保持浏览器会话活跃
 - **Sandbox Detection**: 通过尝试写入 ~/.config 判断是否在受限环境中
 - **Commands**: 使用 Zod 进行输入验证，使用 undici 进行 HTTP 请求
-- **Data Units**: 基线单位**人月**，实际 unit 人天，compare 人天÷22→人月后对比
+- **Data Units**: 基线**人月**，实际 **人月**（新 API 直接返回人月），compare 均以人月对比
 - **CST Timezone**: API 时间戳为 UTC+8 午夜，`epochMsToMonthKey` 加 8h 偏移后解析
 
 ## Environment Variables

@@ -13,9 +13,10 @@ import type { BanmaClient } from '../adapters/atlas/http/client.js';
 import type { LinePlanMonth } from '../adapters/atlas/schema/models.js';
 
 import { fetchLinePlanMonths } from '../adapters/atlas/commands/_lineplans.js';
-import { fetchManpowerConfirm } from '../adapters/atlas/commands/_manhours.js';
+import { fetchManpowerConfirm, fetchWeeklySummary } from '../adapters/atlas/commands/_manhours.js';
 import {
   flattenManpowerTree,
+  flattenWeeklySummary,
   filterActualRows,
   pivotActualRows,
   summarizeActual,
@@ -437,13 +438,13 @@ describe('E2E: 实际工时 (Actual) 数据流', () => {
     expect(rows[0]!.role).toBe('产品');
     expect(rows[0]!.teamLeadId).toBe('065527');
     expect(rows[0]!.teamLeadName).toBe('范正斌');
-    expect(rows[0]!.total).toBeCloseTo(10/22, 4);
+    expect(rows[0]!.total).toBeCloseTo(10, 4);
     expect(rows[0]!.status).toBe(0);
 
     expect(rows[1]!.staffId).toBe('527450');
     expect(rows[1]!.staffName).toBe('李明');
     expect(rows[1]!.role).toBe('研发');
-    expect(rows[1]!.total).toBeCloseTo(8/22, 4);
+    expect(rows[1]!.total).toBeCloseTo(8, 4);
   });
 
   it('扁平化：嵌套三级树', () => {
@@ -529,7 +530,7 @@ describe('E2E: 实际工时 (Actual) 数据流', () => {
     expect(pivot.weekColumns).toContain('2025-06/c1');
     expect(pivot.rows[0]?.staffName).toBe('王野平');
     // Both WEEK_JUN2 and WEEK_JUN9 fall in June 2025 c1, so hours are summed
-    expect(pivot.rows[0]?.weekHours['2025-06/c1']).toBeCloseTo(10/22, 4);
+    expect(pivot.rows[0]?.weekHours['2025-06/c1']).toBeCloseTo(10, 4);
   });
 
   it('filterActualRows：按状态/姓名/角色/部门过滤', () => {
@@ -550,14 +551,14 @@ describe('E2E: 实际工时 (Actual) 数据流', () => {
     const rows = flattenManpowerTree(actualPendingTree as any, '', '', 0);
 
     const monthSummary = summarizeActual(rows, 'month', {});
-    expect(monthSummary[0]!.total).toBeCloseTo(18/22, 4);
+    expect(monthSummary[0]!.total).toBeCloseTo(18, 4);
 
     const roleSummary = summarizeActual(rows, 'role', {});
-    expect(roleSummary.find((e) => e.key === 'role:产品')?.total).toBeCloseTo(10/22, 4);
-    expect(roleSummary.find((e) => e.key === 'role:研发')?.total).toBeCloseTo(8/22, 4);
+    expect(roleSummary.find((e) => e.key === 'role:产品')?.total).toBeCloseTo(10, 4);
+    expect(roleSummary.find((e) => e.key === 'role:研发')?.total).toBeCloseTo(8, 4);
 
     const deptSummary = summarizeActual(rows, 'department', {});
-    expect(deptSummary.find((e) => e.key === 'dept:065527')?.total).toBeCloseTo(18/22, 4);
+    expect(deptSummary.find((e) => e.key === 'dept:065527')?.total).toBeCloseTo(18, 4);
   });
 
   it('实际工时表格渲染含正确状态符号', () => {
@@ -683,7 +684,7 @@ describe('E2E: 基线 ↔ 实际数据交叉校验', () => {
     const actualRows = flattenManpowerTree(actualResult.teamMp ?? [], '', '', 1);
     const actualSummary = summarizeActual(actualRows, 'month', { from: '2025-04', to: '2025-04' });
     const actualTotal = actualSummary.find((e) => e.key === '2025-04')?.total ?? 0;
-    expect(actualTotal).toBeCloseTo(1, 4);
+    expect(actualTotal).toBeCloseTo(22, 4);
     expect(actualTotal).toBeLessThanOrEqual(baselineTotal);
   });
 
@@ -783,7 +784,7 @@ describe('E2E: 特殊边界情况', () => {
         weeks: [{ manpower: '7.5' as any, month: EPOCH_2025_04, cycle: 1 } as any],
       },
     ];
-    expect(pivotActualRows(rows, {}).rows[0]?.total).toBeCloseTo(7.5/22, 4);
+    expect(pivotActualRows(rows, {}).rows[0]?.total).toBeCloseTo(7.5, 4);
   });
 
   it('null/zero/negative manpower 被跳过', () => {
@@ -805,7 +806,7 @@ describe('E2E: 特殊边界情况', () => {
         ],
       },
     ];
-    expect(pivotActualRows(rows, {}).rows[0]?.total).toBeCloseTo(3/22, 4);
+    expect(pivotActualRows(rows, {}).rows[0]?.total).toBeCloseTo(3, 4);
   });
 
   it('legacy week 字段正确转换', () => {
@@ -826,7 +827,7 @@ describe('E2E: 特殊边界情况', () => {
     expect(pivot.weekColumns.length).toBeGreaterThan(0);
     // epochMsToWeekKey returns YYYY-MM-DD, check it starts with 2025-04
     expect(pivot.weekColumns.some((c) => c.startsWith('2025-04'))).toBe(true);
-    expect(pivot.rows[0]?.total).toBeCloseTo(5/22, 4);
+    expect(pivot.rows[0]?.total).toBeCloseTo(5, 4);
   });
 
   it('空树不产生行', () => {

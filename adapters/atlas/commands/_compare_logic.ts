@@ -3,11 +3,9 @@
  *
  * Unit convention:
  *   - Baseline (计划): monthly values are in 人月 (person-months)
- *   - Actual (实际):   `summarizeActual` returns aggregated values in 人天
- *                      (person-days, because weeklyActuals[].manpower is
- *                      reported in days per week).
- *   - Compare:        actual 人天 is converted to 人月 (÷22) so both axes
- *                     are compared in the same unit.
+ *   - Actual (实际):   `summarizeActual` returns aggregated values in 人月
+ *                      (person-months, because the new API delivers data in 人月).
+ *   - Compare:        both axes are compared in the same unit (人月).
  *
  * Consumes the same data structures used by `_month_logic.ts` (baseline)
  * and `_actual_logic.ts` (actual), then merges them into a unified
@@ -85,8 +83,8 @@ function groupBaselineEntries(
  * Build a map key → number from summarizeActual output,
  * folding multiple rows into a single actual number per key.
  *
- * Note: summarizeActual returns 人天 (person-days). The returned map
- * converts to 人月 (÷22) so compare keys are in the same unit as baseline.
+ * Note: summarizeActual returns 人月 (person-months). The returned map
+ * contains values already in 人月, matching baseline units.
  */
 function groupActualEntries(
   entries: ReadonlyArray<ActualSummaryEntry>,

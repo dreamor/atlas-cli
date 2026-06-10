@@ -1,15 +1,16 @@
 /**
  * `atlas actual export` — export actual manpower data to CSV/JSON.
  *
- * Separated from the original export.ts which handled both baseline and actual.
+ * 使用新 API（summaryByTeam），数据已是人月。
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { getClientOrExit } from '../_client.js';
-import { fetchManpowerConfirm } from '../_manhours.js';
+import { fetchWeeklySummary } from '../_manhours.js';
 import {
-  flattenManpowerTree,
+  flattenWeeklySummary,
   filterActualRows,
+  filterActualByBusinessRule,
   summarizeActual,
   type ActualFilter,
   type ActualStaffRow,
@@ -63,6 +64,22 @@ export async function exportCmd(opts: ActualExportCmdOpts): Promise<void> {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   })();
+  const hasExplicitStatus = opts.status !== undefined && opts.status !== '';
+
+  const [result, depts] = await Promise.all([
+    fetchWeeklySummary(client, {
+      month: monthParam,
+      staffId: session.empId,
+    }),
+    loadDepartments(client as any),
+  ]);
+
+  let allRows = flattenWeeklySummary(result.data ?? []);
+
+  // Apply business-rule filter by default; explicit --status skips it
+  if (!hasExplicitStatus) {
+    allRows = [...filterActualByBusinessRule(allRows)];
+  }
 
   const actualFilter: ActualFilter = {
     department: opts.department,
@@ -70,33 +87,6 @@ export async function exportCmd(opts: ActualExportCmdOpts): Promise<void> {
     staffName: undefined,
     status: parseStatusFilter(opts.status),
   };
-
-  // Fetch both pending and approved in parallel
-  const [pendingResult, approvedResult, depts] = await Promise.all([
-    fetchManpowerConfirm(client as any, {
-      projectId,
-      month: monthParam,
-      staffId: session.empId,
-      status: 0,
-    }),
-    fetchManpowerConfirm(client as any, {
-      projectId,
-      month: monthParam,
-      staffId: session.empId,
-      status: 1,
-    }),
-    loadDepartments(client as any),
-  ]);
-
-  const pendingRows = flattenManpowerTree(pendingResult.teamMp ?? [], '', '', 0);
-  const approvedRows = flattenManpowerTree(approvedResult.teamMp ?? [], '', '', 1);
-
-  // Merge: approved overwrites pending per staffId
-  const staffMap = new Map<string, ActualStaffRow>();
-  for (const row of pendingRows) staffMap.set(row.staffId, row);
-  for (const row of approvedRows) staffMap.set(row.staffId, row);
-  const allRows = [...staffMap.values()];
-
   const filtered = filterActualRows(allRows, actualFilter);
 
   const resolveDepartment: DepartmentResolver = (id) =>

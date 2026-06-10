@@ -11,7 +11,7 @@
  */
 import { getClientOrExit } from '../_client.js';
 import { fetchLinePlanMonths } from '../_lineplans.js';
-import { fetchManpowerConfirm } from '../_manhours.js';
+import { fetchWeeklySummary } from '../_manhours.js';
 import { loadDepartments } from '../../dict/cache.js';
 import { resolveDept } from '../../dict/resolve.js';
 import { resolveProjectIdAsync } from '../../util/projectId.js';
@@ -25,8 +25,9 @@ import {
   type SummaryAxis,
 } from '../_month_logic.js';
 import {
-  flattenManpowerTree,
+  flattenWeeklySummary,
   filterActualRows,
+  filterActualByBusinessRule,
   summarizeActual,
   type ActualFilter,
   type ActualStatusFilter,
@@ -93,31 +94,21 @@ function expandMonthRange(
 }
 
 /**
- * Fetch actual data for a single month. Returns:
- *  - `staffRows`: flattened + merged staff rows (人天, from weeklyActuals)
- *  - `apiMp`:    authoritative total person-months from API (used when no
- *                 axis breakdown is needed or as a fallback)
+ * Fetch actual data for a single month via the new API.
+ * Returns flattened staff rows in 人月 (no /22 needed).
  */
 async function fetchActualMonth(
   client: any,
   projectId: string,
   session: { empId: string },
   month: string,
-): Promise<{ staffRows: ActualStaffRow[]; apiMp: number }> {
-  const [pendingResult, approvedResult] = await Promise.all([
-    fetchManpowerConfirm(client, { projectId, month, staffId: session.empId, status: 0 }),
-    fetchManpowerConfirm(client, { projectId, month, staffId: session.empId, status: 1 }),
-  ]);
-  // Merge approved + pending (approved 覆盖 pending)
-  const pendingRows = flattenManpowerTree(pendingResult.teamMp ?? [], '', '', 0);
-  const approvedRows = flattenManpowerTree(approvedResult.teamMp ?? [], '', '', 1);
-  const map = new Map<string, ActualStaffRow>();
-  for (const r of pendingRows) map.set(r.staffId, r);
-  for (const r of approvedRows) map.set(r.staffId, r);
-
-  // Prefer approved mp; fall back to pending
-  const apiMp = Math.max(Number(approvedResult.mp ?? 0), Number(pendingResult.mp ?? 0));
-  return { staffRows: [...map.values()], apiMp };
+): Promise<{ staffRows: ActualStaffRow[] }> {
+  const result = await fetchWeeklySummary(client, {
+    month,
+    staffId: session.empId,
+  });
+  const rows = flattenWeeklySummary(result.data ?? []);
+  return { staffRows: [...rows] };
 }
 
 export interface CompareCmdOpts {
@@ -228,22 +219,21 @@ export async function compareCmd(opts: CompareCmdOpts): Promise<void> {
   });
 
   // --- Actual pipeline ---
-  // 对 month 轴直接用 API mp（更准确），对 dept/role 轴用 weeklyActuals 分解
   const axis = parseAxis(opts.by);
+  const hasExplicitStatus = opts.status !== undefined && opts.status !== '';
   const mergedMap = new Map<string, ActualStaffRow>();
 
-  // 收集按月的 API mp 值。actualMonths 已与用户范围对齐。
-  const actualMpEntries: Array<{ key: string; apiMp: number }> = [];
-  for (let i = 0; i < actualMonthlyResults.length; i++) {
-    const result = actualMonthlyResults[i]!;
-    const dataKey = actualMonths[i]; // 第 i 条结果对应第 i 个月
-    if (dataKey && result.apiMp > 0) {
-      actualMpEntries.push({ key: dataKey, apiMp: result.apiMp });
-    }
+  for (const result of actualMonthlyResults) {
     for (const row of result.staffRows) mergedMap.set(row.staffId, row);
   }
 
-  const allActualRows = [...mergedMap.values()];
+  let allActualRows = [...mergedMap.values()];
+
+  // Apply business-rule filter by default; explicit --status skips it
+  if (!hasExplicitStatus) {
+    allActualRows = [...filterActualByBusinessRule(allActualRows)];
+  }
+
   const actualFilter: ActualFilter = {
     department: opts.department,
     role: opts.role,
@@ -252,50 +242,15 @@ export async function compareCmd(opts: CompareCmdOpts): Promise<void> {
   };
   const filteredActual = filterActualRows(allActualRows, actualFilter);
 
-  // 对 month 轴用 API mp（权威聚合值，已是人月，不走 buildCompareResult 的 ÷22）
-  // 对 dept/role 轴用 summarizeActual（人天值，走 ÷22 转人月）
+  // Both month and dept/role axes use summarizeActual (already in 人月)
   let result: CompareResult;
 
-  if (axis === 'month') {
-    // 手工构造 CompareEntry：基线 key 不动，实际取 apiMp
-    const baseMap = new Map<string, number>();
-    for (const e of baselineSummary) {
-      baseMap.set(e.key, e.total);
-    }
-    const allKeys = new Set([
-      ...baseMap.keys(),
-      ...actualMpEntries.map((e) => e.key),
-    ]);
-    const entries: CompareEntry[] = [];
-    for (const key of [...allKeys].sort()) {
-      const baseline = baseMap.get(key) ?? 0;
-      const actual = actualMpEntries.find((e) => e.key === key)?.apiMp ?? 0;
-      const diff = actual - baseline;
-      const diffPercent = baseline !== 0 ? (diff / baseline) * 100 : 0;
-      entries.push({
-        key,
-        label: baselineSummary.find((e) => e.key === key)?.label ?? key,
-        baseline,
-        actual,
-        diff,
-        diffPercent,
-        flag: opts.flagOverrun && diff > 0 && Math.abs(diff) > (opts.threshold ?? 0)
-          ? 'overrun' as const
-          : Math.abs(diff) > (opts.threshold ?? 0)
-            ? 'under_threshold' as const
-            : 'within_threshold' as const,
-      });
-    }
-    const totals = computeCompareTotals(entries);
-    result = { axis, entries, ...totals };
-  } else {
-    const actualSummary = summarizeActual(filteredActual, axis, {});
-    result = buildCompareResult(baselineSummary, actualSummary, {
-      axis,
-      threshold: opts.threshold ?? 0,
-      flagOverrun: opts.flagOverrun ?? false,
-    });
-  }
+  const actualSummary = summarizeActual(filteredActual, axis, {});
+  result = buildCompareResult(baselineSummary, actualSummary, {
+    axis,
+    threshold: opts.threshold ?? 0,
+    flagOverrun: opts.flagOverrun ?? false,
+  });
 
   const projLabel = resolved.name
     ? `project "${resolved.name}" (${projectId})`

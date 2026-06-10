@@ -13,3 +13,4 @@ test-results/
 *.trace.zip
 *.har
 storage-state.json
+.codegraph/

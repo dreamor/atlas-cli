@@ -1,107 +1,109 @@
 /**
- * API fetch layer for /yuntu-service/yida/manpower/ endpoints.
+ * API fetch layer for /yuntu-service/manpower/weekly/ endpoints.
  *
- * Recon: 2026-06-06 — discovered from SPA bundle analysis of
- * `/manpowers/confirm/projectWeek` page. See docs/recon/manhour.md.
+ * 新 API 直接返回人月 (person-months)，无需 /22 转换。
  */
 import type { BanmaClient } from '../http/client.js';
-import {
-  ManpowerConfirmResultSchema,
-  type ManpowerConfirmResult,
-} from '../schema/models.js';
+import { WeeklySummaryResultSchema, type WeeklySummaryResult } from '../schema/models.js';
+import { type ManpowerConfirmResult } from '../schema/models.js';
 
-/** Status filter for the confirm detail endpoint. */
-export type ConfirmStatus = 0 | 1;
-// 0 = pending (待审批), 1 = approved (已审批)
+// ---------------------------------------------------------------------------
+// 新 API: /yuntu-service/manpower/weekly/summaryByTeam.json
+// ---------------------------------------------------------------------------
 
-export interface FetchManpowerConfirmOpts {
-  readonly projectId: string;
-  readonly month: string; // YYYY-MM
-  readonly staffId: string;
-  readonly status?: ConfirmStatus;
-}
-
-export interface FetchTeamProjectConfirmOpts {
-  readonly projectId: string;
-  readonly month: string; // YYYY-MM
-  readonly status?: number;
-}
-
-export interface FetchProjectManpowerDetailOpts {
-  readonly month: string; // YYYY-MM
-  readonly staffId: string;
+export interface FetchWeeklySummaryOpts {
+  readonly month: string;          // YYYY-MM
+  readonly staffId: string;        // 当前登录用户的 empId
+  readonly projectIds?: readonly string[];
+  readonly isConfirm?: boolean;    // false=全量, true=仅已确认
 }
 
 /**
- * Fetch the primary actual-hours confirmation tree for a project.
- * Endpoint: GET /yuntu-service/yida/manpower/getProjMpConfirmDetail.json
- *
- * Returns `{ hc, mp, projMp[], teamMp[] }` where teamMp is a recursive
- * tree of teams → staff with weekly actual hours data.
+ * Fetch actual manpower summary by team for a given month.
+ * Returns data in 人月 (person-months) directly — no /22 conversion needed.
  */
+export async function fetchWeeklySummary(
+  client: BanmaClient,
+  opts: FetchWeeklySummaryOpts,
+): Promise<WeeklySummaryResult> {
+  const body = {
+    month: opts.month,
+    staffIds: [],
+    projectIds: opts.projectIds ?? [],
+    isConfirm: opts.isConfirm ?? false,
+    loginStaffId: opts.staffId,
+  };
+  const { data } = await client.request<unknown>({
+    path: '/yuntu-service/manpower/weekly/summaryByTeam.json',
+    method: 'POST',
+    body,
+  });
+  const parsed = WeeklySummaryResultSchema.safeParse(data);
+  if (!parsed.success) return data as WeeklySummaryResult;
+  return parsed.data;
+}
+
+// ---------------------------------------------------------------------------
+// @deprecated 旧 API — 仅用于 E2E 测试 mock，勿在新代码中使用。
+// 新命令应使用 fetchWeeklySummary 替代。
+// ---------------------------------------------------------------------------
+
+/** @deprecated 使用 fetchWeeklySummary */
+export interface FetchManpowerConfirmOpts {
+  readonly projectId: string;
+  readonly month: string;
+  readonly staffId: string;
+  readonly status?: number;
+}
+
+/** @deprecated 使用 fetchWeeklySummary */
 export async function fetchManpowerConfirm(
   client: BanmaClient,
   opts: FetchManpowerConfirmOpts,
 ): Promise<ManpowerConfirmResult> {
-  // IMPORTANT: `status` must be a number in the URL, not a string.
-  // The server uses Zod validation that expects `z.number()`.
   const query: Record<string, string> = {
     month: opts.month,
     projectList: String(opts.projectId),
     staff_ID: String(opts.staffId),
   };
-  if (opts.status !== undefined) {
-    query.status = String(opts.status);
-  }
-
+  if (opts.status !== undefined) query.status = String(opts.status);
   const { data } = await client.request<unknown>({
     path: '/yuntu-service/yida/manpower/getProjMpConfirmDetail.json',
     method: 'GET',
     query,
   });
-
-  const parsed = ManpowerConfirmResultSchema.safeParse(data);
-  if (!parsed.success) {
-    // Return a best-effort result even if validation partially fails
-    return data as ManpowerConfirmResult;
-  }
-  return parsed.data;
+  return data as ManpowerConfirmResult;
 }
 
-/**
- * Fetch project-level confirmation list (team-view).
- * Endpoint: GET /yuntu-service/yida/manpower/getTeamProjectConfirmByProjectId.json
- *
- * Note: Returns errors in testing — may need specific permission or
- * different parameter formatting. Provided as a forward-compat layer.
- */
+/** @deprecated 使用 fetchWeeklySummary */
+export interface FetchTeamProjectConfirmOpts {
+  readonly projectId: string;
+  readonly month: string;
+  readonly status?: number;
+}
+
+/** @deprecated 使用 fetchWeeklySummary */
 export async function fetchTeamProjectConfirm(
   client: BanmaClient,
   opts: FetchTeamProjectConfirmOpts,
 ): Promise<unknown> {
-  const query: Record<string, string> = {
-    month: opts.month,
-    projectId: String(opts.projectId),
-  };
-  if (opts.status !== undefined) {
-    query.status = String(opts.status);
-  }
-
+  const query: Record<string, string> = { month: opts.month, projectId: String(opts.projectId) };
+  if (opts.status !== undefined) query.status = String(opts.status);
   const { data } = await client.request<unknown>({
     path: '/yuntu-service/yida/manpower/getTeamProjectConfirmByProjectId.json',
     method: 'GET',
     query,
   });
-
   return data;
 }
 
-/**
- * Fetch per-staff manpower detail for a given month.
- * Endpoint: GET /yuntu-service/yida/manpower/getProjectManpowerDetail.json
- *
- * Note: Returns errors in testing — may require specific permissions.
- */
+/** @deprecated 使用 fetchWeeklySummary */
+export interface FetchProjectManpowerDetailOpts {
+  readonly month: string;
+  readonly staffId: string;
+}
+
+/** @deprecated 使用 fetchWeeklySummary */
 export async function fetchProjectManpowerDetail(
   client: BanmaClient,
   opts: FetchProjectManpowerDetailOpts,
@@ -109,11 +111,7 @@ export async function fetchProjectManpowerDetail(
   const { data } = await client.request<unknown>({
     path: '/yuntu-service/yida/manpower/getProjectManpowerDetail.json',
     method: 'GET',
-    query: {
-      month: opts.month,
-      staff_ID: String(opts.staffId),
-    },
+    query: { month: opts.month, staff_ID: String(opts.staffId) },
   });
-
   return data;
 }

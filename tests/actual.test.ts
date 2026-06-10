@@ -192,7 +192,7 @@ describe('flattenManpowerTree', () => {
     const rows = flattenManpowerTree(sampleTree, '', '', 0);
     const wyp = rows[0]!;
     expect(wyp.role).toBe('产品');
-    expect(wyp.total).toBeCloseTo(15/22, 4);
+    expect(wyp.total).toBeCloseTo(15, 4);
     expect(wyp.headcount).toBe(1);
     expect(wyp.status).toBe(1);
   });
@@ -385,28 +385,28 @@ describe('pivotActualRows', () => {
     expect(pivot.rows).toHaveLength(2);
     // Row 0: 2025-04/c1=5, 2025-04/c3=5, 2025-05/c1=5 → total=15
     const row0 = pivot.rows[0]!;
-    expect(row0.total).toBeCloseTo(15/22, 4);
+    expect(row0.total).toBeCloseTo(15, 4);
   });
 
   it('computes total from monthly actuals', () => {
     const pivot = pivotActualRows(rows, {});
-    expect(pivot.rows[0]?.total).toBeCloseTo(15/22, 4);
-    expect(pivot.rows[1]?.total).toBeCloseTo(10/22, 4);
+    expect(pivot.rows[0]?.total).toBeCloseTo(15, 4);
+    expect(pivot.rows[1]?.total).toBeCloseTo(10, 4);
   });
 
   it('respects --from filter', () => {
     const pivot = pivotActualRows(rows, { from: '2025-05' });
     // Only 2025-05/c1 should remain
     expect(pivot.weekColumns).toEqual(['2025-05/c1']);
-    expect(pivot.rows[0]?.total).toBeCloseTo(5/22, 4);
-    expect(pivot.rows[1]?.total).toBeCloseTo(3/22, 4);
+    expect(pivot.rows[0]?.total).toBeCloseTo(5, 4);
+    expect(pivot.rows[1]?.total).toBeCloseTo(3, 4);
   });
 
   it('respects --to filter', () => {
     const pivot = pivotActualRows(rows, { to: '2025-04' });
     // Only 2025-04 entries should remain
-    expect(pivot.rows[0]?.total).toBeCloseTo(10/22, 4); // 5+5
-    expect(pivot.rows[1]?.total).toBeCloseTo(7/22, 4);  // 3+4
+    expect(pivot.rows[0]?.total).toBeCloseTo(10, 4); // 5+5
+    expect(pivot.rows[1]?.total).toBeCloseTo(7, 4);  // 3+4
   });
 
   it('handles rows with empty weeklyActuals', () => {
@@ -446,7 +446,7 @@ describe('pivotActualRows', () => {
       },
     ];
     const pivot = pivotActualRows(stringRows, {});
-    expect(pivot.rows[0]?.total).toBeCloseTo(7.5/22, 4);
+    expect(pivot.rows[0]?.total).toBeCloseTo(7.5, 4);
   });
 
   it('skips null/zero/negative manpower', () => {
@@ -468,7 +468,7 @@ describe('pivotActualRows', () => {
       },
     ];
     const pivot = pivotActualRows(sparseRows, {});
-    expect(pivot.rows[0]?.total).toBeCloseTo(3/22, 4);
+    expect(pivot.rows[0]?.total).toBeCloseTo(3, 4);
   });
 });
 
@@ -531,8 +531,8 @@ describe('summarizeActual', () => {
     expect(entries).toHaveLength(2);
     const apr = entries.find((e) => e.key === '2025-04');
     const may = entries.find((e) => e.key === '2025-05');
-    expect(apr?.total).toBeCloseTo(22.5/22, 4); // (5+3+2.5) + (5+4+3) in Apr
-    expect(may?.total).toBeCloseTo(10.5/22, 4); // 5+3+2.5 in May
+    expect(apr?.total).toBeCloseTo(22.5, 4); // (5+3+2.5) + (5+4+3) in Apr
+    expect(may?.total).toBeCloseTo(10.5, 4); // 5+3+2.5 in May
   });
 
   it('summarizes by role', () => {
@@ -540,8 +540,8 @@ describe('summarizeActual', () => {
     expect(entries).toHaveLength(2);
     const product = entries.find((e) => e.key === 'role:产品');
     const dev = entries.find((e) => e.key === 'role:研发');
-    expect(product?.total).toBeCloseTo(15/22, 4);
-    expect(dev?.total).toBeCloseTo(18/22, 4); // 10+8
+    expect(product?.total).toBeCloseTo(15, 4);
+    expect(dev?.total).toBeCloseTo(18, 4); // 10+8
   });
 
   it('summarizes by department (team lead)', () => {
@@ -549,15 +549,15 @@ describe('summarizeActual', () => {
     expect(entries).toHaveLength(2);
     const fan = entries.find((e) => e.key === 'dept:065527');
     const zhao = entries.find((e) => e.key === 'dept:065530');
-    expect(fan?.total).toBeCloseTo(25/22, 4); // 15+10
-    expect(zhao?.total).toBeCloseTo(8/22, 4);
+    expect(fan?.total).toBeCloseTo(25, 4); // 15+10
+    expect(zhao?.total).toBeCloseTo(8, 4);
   });
 
   it('respects --from filter in summary', () => {
     const entries = summarizeActual(rows, 'month', { from: '2025-05' });
     expect(entries).toHaveLength(1);
     expect(entries[0]?.key).toBe('2025-05');
-    expect(entries[0]?.total).toBeCloseTo(10.5/22, 4);
+    expect(entries[0]?.total).toBeCloseTo(10.5, 4);
   });
 
   it('returns empty for empty rows', () => {
@@ -700,9 +700,9 @@ describe('full pipeline: flatten → filter → pivot', () => {
     expect(pivot.rows).toHaveLength(3);
     expect(pivot.rows[0]?.staffName).toBe('王野平');
     // Period keys: 2025-04/c1, 2025-04/c3, 2025-05/c1
-    expect(pivot.rows[0]?.total).toBeCloseTo(15/22, 4);
-    expect(pivot.rows[1]?.total).toBeCloseTo(10/22, 4);
-    expect(pivot.rows[2]?.total).toBeCloseTo(8/22, 4);
+    expect(pivot.rows[0]?.total).toBeCloseTo(15, 4);
+    expect(pivot.rows[1]?.total).toBeCloseTo(10, 4);
+    expect(pivot.rows[2]?.total).toBeCloseTo(8, 4);
   });
 
   it('end-to-end with status filter', () => {
@@ -726,6 +726,6 @@ describe('full pipeline: flatten → filter → pivot', () => {
     expect(rows[2]?.teamLeadName).toBe('赵经理');
 
     const pivot = pivotActualRows(rows, {});
-    expect(pivot.rows.reduce((sum, r) => sum + r.total, 0)).toBeCloseTo(12/22, 4); // 5+4+3
+    expect(pivot.rows.reduce((sum, r) => sum + r.total, 0)).toBeCloseTo(12, 4); // 5+4+3
   });
 });

@@ -88,8 +88,8 @@ export BANMA_PROJECT_ID=2548
 | 概念 | 英文 | 单位 | 说明 |
 |------|------|------|------|
 | **基线** | Baseline | 人月 | 计划/预测的人力投入 |
-| **实际** | Actual | 人天 | 实际录入的工作工时 |
-| **对比** | Compare | 人月 | 实际人天 ÷ 22 → 人月后对比基线 |
+| **实际** | Actual | 人月 | 实际录入的工作工时（新 API 直接返回人月，无需转换） |
+| **对比** | Compare | 人月 | 基线与实际均以人月对比 |
 
 所有 API 时间戳均为 CST（UTC+8）时区。日期参数统一格式：`YYYY-MM`（如 `2024-01`）。
 
@@ -326,7 +326,7 @@ atlas baseline import --project-id <id> --file ./data.xlsx
 atlas baseline import --project-id <id> --file ./data.xlsx --apply
 ```
 
-### `atlas actual` — 实际工时（人天）
+### `atlas actual` — 实际工时
 
 ```bash
 # 实际工时明细（人员×周期透视表，无参数默认查当前自然年）
@@ -355,7 +355,7 @@ atlas actual export --project-id <id> --format csv --out ./actuals.csv
 
 ### `atlas compare` — 对比分析
 
-实际工时（人天）÷ 22 转换为**人月**后与基线进行对比：
+实际工时与基线均以**人月**为单位进行对比：
 
 ```bash
 # 按月对比
@@ -371,7 +371,7 @@ atlas compare --project-id <id> --from 2024-01 --to 2024-06
 # 标记超支（实际 > 基线）
 atlas compare --project-id <id> --flag-overrun
 
-# 设置差异阈值（小时）
+# 设置差异阈值（人月）
 atlas compare --project-id <id> --threshold 40
 
 # 筛选

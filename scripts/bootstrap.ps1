@@ -164,13 +164,14 @@ function Install-NpmShims {
     Write-Log "copied node.exe → $dstNode"
   }
 
-  # npm.cmd / npx.cmd — wrap with absolute path to avoid %~dp0 breakage
+  # npm.cmd / npx.cmd — wrap with absolute path to avoid %~dp0 breakage.
+  # CMD does not require backslash escaping inside string literals, so emit
+  # the raw path verbatim.
   foreach ($cmd in @('npm', 'npx')) {
     $src = Join-Path $binDir "$cmd.cmd"
     $dst = Join-Path $targetDir "$cmd.cmd"
     if ((Test-Path $src) -and -not (Test-Path $dst)) {
-      $realBin = $binDir.Replace('\', '\\')
-      $wrapper = "@echo off`r`n\"$realBin\\$cmd.cmd\" %*"
+      $wrapper = "@echo off`r`n`"$binDir\$cmd.cmd`" %*"
       [System.IO.File]::WriteAllText($dst, $wrapper, [System.Text.Encoding]::ASCII)
       Write-Log "wrote $cmd wrapper → $dst (points to $binDir)"
     }

@@ -1,14 +1,17 @@
 /**
  * `atlas actual summary --by <axis>` — aggregate actual hours by month/department/role.
+ *
+ * 使用新 API（summaryByTeam），数据已是人月。
  */
 import { getClientOrExit } from '../_client.js';
-import { fetchManpowerConfirm } from '../_manhours.js';
+import { fetchWeeklySummary } from '../_manhours.js';
 import { resolveProjectIdAsync } from '../../util/projectId.js';
 import { ConfigError } from '../../util/errors.js';
 import { printResult } from '../../util/output.js';
 import {
-  flattenManpowerTree,
+  flattenWeeklySummary,
   filterActualRows,
+  filterActualByBusinessRule,
   summarizeActual,
   renderActualSummaryTable,
   type ActualFilter,
@@ -72,6 +75,7 @@ export async function summaryCmd(opts: ActualSummaryCmdOpts): Promise<void> {
 
   const statusFilter = parseStatusFilter(opts.status);
   const axis = parseAxis(opts.by);
+  const hasExplicitStatus = opts.status !== undefined && opts.status !== '';
 
   const client = await getClientOrExit();
   const session = await loadSession();
@@ -85,28 +89,17 @@ export async function summaryCmd(opts: ActualSummaryCmdOpts): Promise<void> {
   const projectId = resolved.id;
   const month = opts.month ?? getCurrentMonth();
 
-  const [pendingResult, approvedResult] = await Promise.all([
-    fetchManpowerConfirm(client, {
-      projectId,
-      month,
-      staffId: session.empId,
-      status: 0,
-    }),
-    fetchManpowerConfirm(client, {
-      projectId,
-      month,
-      staffId: session.empId,
-      status: 1,
-    }),
-  ]);
+  const result = await fetchWeeklySummary(client, {
+    month,
+    staffId: session.empId,
+  });
 
-  const pendingRows = flattenManpowerTree(pendingResult.teamMp ?? [], '', '', 0);
-  const approvedRows = flattenManpowerTree(approvedResult.teamMp ?? [], '', '', 1);
+  let allRows = flattenWeeklySummary(result.data ?? []);
 
-  const staffMap = new Map<string, typeof pendingRows[number]>();
-  for (const row of pendingRows) staffMap.set(row.staffId, row);
-  for (const row of approvedRows) staffMap.set(row.staffId, row);
-  const allRows = [...staffMap.values()];
+  // Apply business-rule filter by default; explicit --status skips it
+  if (!hasExplicitStatus) {
+    allRows = [...filterActualByBusinessRule(allRows)];
+  }
 
   const filter: ActualFilter = {
     department: opts.department,

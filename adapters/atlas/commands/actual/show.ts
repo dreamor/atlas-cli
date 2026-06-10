@@ -4,12 +4,14 @@
  * Shows the weekly breakdown for a specific person.
  */
 import { getClientOrExit } from '../_client.js';
-import { fetchManpowerConfirm } from '../_manhours.js';
+import { fetchWeeklySummary } from '../_manhours.js';
 import { resolveProjectIdAsync } from '../../util/projectId.js';
 import { ConfigError } from '../../util/errors.js';
 import { printResult, isJsonMode } from '../../util/output.js';
 import {
-  flattenManpowerTree,
+  flattenWeeklySummary,
+  filterActualByBusinessRule,
+  ACTUAL_STATUS,
 } from '../_actual_logic.js';
 import { loadSession } from '../../auth/session.js';
 
@@ -27,6 +29,12 @@ function getCurrentMonth(): string {
   return `${y}-${m}`;
 }
 
+function statusLabel(status: number): string {
+  if (status === ACTUAL_STATUS.CONFIRMED) return 'confirmed';
+  if (status === ACTUAL_STATUS.APPROVED) return 'approved';
+  return 'pending';
+}
+
 export async function showCmd(staffId: string, opts: ActualShowCmdOpts): Promise<void> {
   const client = await getClientOrExit();
   const session = await loadSession();
@@ -40,30 +48,15 @@ export async function showCmd(staffId: string, opts: ActualShowCmdOpts): Promise
   const projectId = resolved.id;
   const month = opts.month ?? getCurrentMonth();
 
-  const [pendingResult, approvedResult] = await Promise.all([
-    fetchManpowerConfirm(client, {
-      projectId,
-      month,
-      staffId: session.empId,
-      status: 0,
-    }),
-    fetchManpowerConfirm(client, {
-      projectId,
-      month,
-      staffId: session.empId,
-      status: 1,
-    }),
-  ]);
+  const result = await fetchWeeklySummary(client, {
+    month,
+    staffId: session.empId,
+  });
 
-  const pendingRows = flattenManpowerTree(pendingResult.teamMp ?? [], '', '', 0);
-  const approvedRows = flattenManpowerTree(approvedResult.teamMp ?? [], '', '', 1);
+  const allRows = flattenWeeklySummary(result.data ?? []);
+  const rows = filterActualByBusinessRule(allRows, month);
 
-  // Merge, approved overwrites pending
-  const staffMap = new Map<string, typeof pendingRows[number]>();
-  for (const row of pendingRows) staffMap.set(row.staffId, row);
-  for (const row of approvedRows) staffMap.set(row.staffId, row);
-
-  const match = staffMap.get(staffId);
+  const match = rows.find((r) => r.staffId === staffId);
   if (!match) {
     if (isJsonMode({ json: opts.json })) {
       printResult(
@@ -86,7 +79,7 @@ export async function showCmd(staffId: string, opts: ActualShowCmdOpts): Promise
       role: match.role,
       teamLeadId: match.teamLeadId,
       teamLeadName: match.teamLeadName,
-      status: match.status === 1 ? 'approved' : 'pending',
+      status: statusLabel(match.status),
       total: match.total,
       headcount: match.headcount,
       weeks: match.weeks,
@@ -102,7 +95,7 @@ export async function showCmd(staffId: string, opts: ActualShowCmdOpts): Promise
         // eslint-disable-next-line no-console
         console.log(`Team: ${match.teamLeadName} (${match.teamLeadId})`);
         // eslint-disable-next-line no-console
-        console.log(`Status: ${match.status === 1 ? 'approved' : 'pending'}`);
+        console.log(`Status: ${statusLabel(match.status)}`);
         // eslint-disable-next-line no-console
         console.log(`Total (人月): ${match.total.toFixed(2)}`);
         // eslint-disable-next-line no-console

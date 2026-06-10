@@ -10,6 +10,10 @@ import type {
   ManpowerTreeNode,
   ManpowerWeeklyActual,
 } from '../schema/models.js';
+import type {
+  WeeklySummaryNode,
+  WeeklySummaryDetail,
+} from '../schema/models.js';
 import {
   epochMsToMonthKey,
   toManpower,
@@ -64,6 +68,13 @@ export interface ActualPivotRow {
 /** Status filter for actual manhour queries. */
 export type ActualStatusFilter = 'pending' | 'approved' | 'all';
 
+/** 实际工时明细审批状态枚举。 */
+export const ACTUAL_STATUS = {
+  FILLED: 0,           // 已填（含未批和已批）
+  APPROVED: 1,         // 已填(已批) — 主管已审批
+  CONFIRMED: 2,        // 已确认 — PM 已确认
+} as const;
+
 // ---------------------------------------------------------------------------
 // Tree flattening
 // ---------------------------------------------------------------------------
@@ -98,7 +109,7 @@ export function flattenManpowerTree(
         teamLeadId: parentLeadId,
         teamLeadName: parentLeadName,
         status: node.s ?? status,
-        total: (node.t ?? 0) / PERSON_DAYS_PER_MONTH,
+        total: (node.t ?? 0),
         headcount: Number(node.h ?? 0),
         weeks: node.weeklyActuals ?? [],
       });
@@ -133,8 +144,135 @@ function parseRole(raw: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Filtering
+// 新 API flatten: /yuntu-service/manpower/weekly/summaryByTeam.json → ActualStaffRow[]
 // ---------------------------------------------------------------------------
+
+/** 获取当前月份（YYYY-MM）。 */
+export function getCurrentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * 从 ActualStaffRow 中提取所在月份。
+ * 取第一个 week 的 month 字段（epoch ms）转换为 YYYY-MM。
+ */
+export function getRowMonth(row: ActualStaffRow): string | null {
+  if (row.weeks.length === 0) return null;
+  for (const w of row.weeks) {
+    if (w.month !== null && w.month !== undefined) {
+      const mk = epochMsToMonthKey(w.month);
+      if (mk) return mk;
+    }
+  }
+  return null;
+}
+
+/**
+ * Flatten the new API's WeeklySummaryNode tree into ActualStaffRow[].
+ *
+ * Unlike the old API, `detail[].manpower` is already in 人月 — no /22 needed.
+ * status is preserved for downstream business-rule filtering.
+ */
+export function flattenWeeklySummary(
+  nodes: ReadonlyArray<WeeklySummaryNode>,
+  parentLeadId: string = '',
+  parentLeadName: string = '',
+): ReadonlyArray<ActualStaffRow> {
+  const rows: ActualStaffRow[] = [];
+
+  for (const node of nodes) {
+    const sid = node.staffId;
+    const name = node.realname;
+
+    if (node.children && node.children.length > 0) {
+      const leadId = sid || parentLeadId;
+      const leadName = name || parentLeadName;
+      const childRows = flattenWeeklySummary(node.children, leadId, leadName);
+      rows.push(...childRows);
+    } else if (node.detail && node.detail.length > 0) {
+      // Leaf node with detail entries — construct week-level rows
+      let totalMp = 0;
+      const weeks: ManpowerWeeklyActual[] = [];
+      let status = 0;
+
+      for (const d of node.detail) {
+        const mp = Number(d.manpower) || 0;
+        totalMp += mp;
+        weeks.push({
+          id: d.id ?? undefined,
+          staffId: d.staffId ?? undefined,
+          realname: d.realname ?? undefined,
+          bossId: d.bossId ?? undefined,
+          manpower: mp,
+          cycle: d.cycle,
+          month: d.month,
+          projectId: d.projectId ?? undefined,
+          projectName: d.projectName ?? undefined,
+          status: d.status ?? undefined,
+          remark: d.remark ?? undefined,
+          confirmStaffId: d.confirmStaffId ?? undefined,
+          confirmStatus: d.confirmStatus ?? undefined,
+          except: d.except ?? undefined,
+        });
+        // Take the highest status value (CONFIRMED > APPROVED > FILLED)
+        if (d.status !== null && d.status !== undefined && d.status > status) {
+          status = d.status;
+        }
+      }
+
+      rows.push({
+        staffId: sid,
+        staffName: name,
+        role: node.role ?? '',
+        teamLeadId: parentLeadId,
+        teamLeadName: parentLeadName,
+        status,
+        total: totalMp,
+        headcount: node.hc ?? 0,
+        weeks,
+      });
+    } else if (sid) {
+      // Leaf with no detail — zero-mp row (headcount only)
+      rows.push({
+        staffId: sid,
+        staffName: name,
+        role: node.role ?? '',
+        teamLeadId: parentLeadId,
+        teamLeadName: parentLeadName,
+        status: 0,
+        total: 0,
+        headcount: node.hc ?? 0,
+        weeks: [],
+      });
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * 按业务规则过滤实际工时行：
+ *   - 过去月份（< currentMonth）：只保留已确认（status === 2）的行
+ *   - 当前月份（= currentMonth）：保留所有已填的行（status >= 0）
+ *   - 月份无法确定的行：放行
+ */
+export function filterActualByBusinessRule(
+  rows: ReadonlyArray<ActualStaffRow>,
+  currentMonth?: string,
+): ReadonlyArray<ActualStaffRow> {
+  const cm = currentMonth ?? getCurrentMonth();
+  return rows.filter((row) => {
+    const rowMonth = getRowMonth(row);
+    if (!rowMonth) return true;
+    if (rowMonth < cm) {
+      // 过去月份：只保留已确认
+      return row.status === ACTUAL_STATUS.CONFIRMED;
+    }
+    // 当前月份及未来月份：保留所有已填
+    return true;
+  });
+}
 
 export interface ActualFilter {
   readonly department?: string;
@@ -271,7 +409,7 @@ function epochMsToWeekKey(raw: unknown): string | null {
  * display in 人月 so users can compare directly. */
 const PERSON_DAYS_PER_MONTH = 22;
 
-/** Parse the manpower value from a weeklyActuals entry, converting to 人月.
+/** Parse the manpower value from a weeklyActuals entry.
  * Prefers `manpower` field (confirmed format); falls back to `actualManpower`. */
 function parseManpower(wa: ManpowerWeeklyActual): number | null {
   let hours: number | null = null;
@@ -283,7 +421,7 @@ function parseManpower(wa: ManpowerWeeklyActual): number | null {
   if (hours === null && wa.actualManpower !== null && wa.actualManpower !== undefined) {
     hours = toManpower(wa.actualManpower);
   }
-  return hours !== null ? hours / PERSON_DAYS_PER_MONTH : null;
+  return hours; // 已是人月（新 API）或人天（旧 API 已在 flatten 层 /22）
 }
 
 export const PERSON_DAYS_TO_MONTHS = PERSON_DAYS_PER_MONTH;

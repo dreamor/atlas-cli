@@ -130,7 +130,6 @@ REM npm.cmd / npx.cmd — absolute-path wrapper to avoid %~dp0 breakage
 for %%C in (npm npx) do (
   if not exist "%ATLAS_BIN%\%%C.cmd" (
     if exist "%ATLAS_NODE_BIN%\%%C.cmd" (
-      set WRAPPER=@echo off\r\n"%%ATLAS_NODE_BIN:\=\%%%%C.cmd" %%*
       > "%ATLAS_BIN%\%%C.cmd" echo @echo off
       >> "%ATLAS_BIN%\%%C.cmd" echo "%ATLAS_NODE_BIN%\%%C.cmd" %%*
       echo [bootstrap] wrote %%C wrapper to %ATLAS_BIN%\%%C.cmd

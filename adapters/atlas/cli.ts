@@ -548,11 +548,17 @@ function registerUtilityCommands(program: Command): void {
     });
 }
 
+// Version is generated from package.json by scripts/sync-version.mjs (run as
+// prebuild). Inlined as a string constant so both `tsc` and bun --compile
+// single-file binaries can read it without runtime fs access.
+import { ATLAS_VERSION } from './util/version.js';
+
 export function buildProgram(): Command {
   const program = new Command();
   program
     .name('atlas')
     .description('Atlas CLI - 斑马云图人力基线管理工具')
+    .version(ATLAS_VERSION, '-V, --version', '显示版本号')
     .option('--json', '以 JSON 信封输出（也可用环境变量 ATLAS_OUTPUT=json）')
     .option('--describe', '不执行命令，仅输出该命令的参数 schema（agent 自省用）')
     .showHelpAfterError()

@@ -73,15 +73,19 @@ export async function resolveProjectIdAsync(
     );
   }
 
-  const catalog = await loadProjectCatalog(client, opts);
-
+  // Numeric id: short-circuit before any network call. Name lookup is purely
+  // for downstream display, so failures (offline / unauthenticated / stub
+  // client in tests) must not break id resolution.
   if (/^[0-9]+$/.test(trimmed)) {
-    // Also try to resolve the name from the catalog so downstream
-    // commands can display a human-friendly project label.
-    const match = catalog.find((p) => String(p.id) === trimmed);
-    return { id: trimmed, ...(match ? { name: match.name } : {}) };
+    try {
+      const catalog = await loadProjectCatalog(client, opts);
+      const match = catalog.find((p) => String(p.id) === trimmed);
+      if (match) return { id: trimmed, name: match.name };
+    } catch { /* fall through — id alone is enough */ }
+    return { id: trimmed };
   }
 
+  const catalog = await loadProjectCatalog(client, opts);
   const result = resolveProjectIdFromName(catalog, trimmed);
 
   if (result.kind === 'resolved') {

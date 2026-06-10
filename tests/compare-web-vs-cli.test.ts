@@ -229,7 +229,7 @@ describe('🔍 网页端 vs CLI：实际工时一致性', () => {
     for (const ws of webResult) {
       const cs = cliResult.staffRows.find((r) => r.staffId === ws.staffId);
       expect(cs, `缺少 staffId=${ws.staffId}`).toBeDefined();
-      expect(cs!.total * 22).toBeCloseTo(ws.total, 1);
+      expect(cs!.total).toBeCloseTo(ws.total, 1);
     }
   });
 
@@ -242,7 +242,7 @@ describe('🔍 网页端 vs CLI：实际工时一致性', () => {
 
   it('Grand Total 一致', () => {
     const webGrand = webResult.reduce((s, w) => s + w.total, 0);
-    expect(cliResult.pivotGrandTotal * 22).toBeCloseTo(webGrand, 1);
+    expect(cliResult.pivotGrandTotal).toBeCloseTo(webGrand, 1);
   });
 });
 
@@ -253,7 +253,7 @@ describe('🔍 网页端 vs CLI：月度汇总交叉校验', () => {
     const cliJune = cliResult.monthSummary.find((e) => e.key === '2025-06');
     const webStaffs = webProcessActual(actualTree);
     const webJune = webStaffs.reduce((s, w) => s + w.total, 0);
-    expect(cliJune!.total * 22).toBeCloseTo(webJune, 1);
+    expect(cliJune!.total).toBeCloseTo(webJune, 1);
   });
 
   it('周列总数与人员周数求和一致', () => {
