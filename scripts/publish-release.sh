@@ -4,12 +4,12 @@
 # 流程：
 #   1. 在本地构建所有平台二进制
 #   2. 如果安装脚本有变更，同步到 dist/main
-#   3. 打 tag 并创建 release，上传二进制（release note 只写版本号）
+#   3. 打 tag → 创建 release（不含文件）→ 逐个上传二进制
 #
 # 不会将任何源码推送到 GitHub。
 #
 # 用法:
-#   ./scripts/publish-release.sh v0.2.3
+#   ./scripts/publish-release.sh v0.4.0
 #
 # 前置条件:
 #   - bun (用于编译)
@@ -21,7 +21,7 @@ set -euo pipefail
 
 if [ $# -ne 1 ]; then
   echo "用法: $0 <version>"
-  echo "示例: $0 v0.2.3"
+  echo "示例: $0 v0.4.0"
   exit 1
 fi
 
@@ -72,6 +72,14 @@ npm run build:bun:win-x64
 echo "  构建产物:"
 ls -lh "$OUT_DIR"/
 
+BINARIES=(
+  "$OUT_DIR/atlas-darwin-arm64"
+  "$OUT_DIR/atlas-darwin-x64"
+  "$OUT_DIR/atlas-linux-arm64"
+  "$OUT_DIR/atlas-linux-x64"
+  "$OUT_DIR/atlas-windows-x64.exe"
+)
+
 # ── 2. 同步安装脚本到 dist/main ──────────────────────────
 
 echo ""
@@ -80,24 +88,19 @@ echo "▶ 同步安装脚本到 $REMOTE/main..."
 TEMP_WORKTREE="$(mktemp -d)"
 trap 'rm -rf "$TEMP_WORKTREE"' EXIT
 
-# 从远程获取最新的 main
 git fetch "$REMOTE" main
 
-# 创建临时工作目录操作
 git worktree add "$TEMP_WORKTREE" "FETCH_HEAD" 2>/dev/null || {
-  # FETCH_HEAD 可能不可用，直接 checkout 远程的干净版本
   git clone --depth 1 "$(git remote get-url "$REMOTE")" "$TEMP_WORKTREE" --branch main
 }
 
-# 复制本地的安装脚本到临时工作树
-cp "$PROJECT_ROOT/scripts/install.sh" "$TEMP_WORKTREE/scripts/"
-cp "$PROJECT_ROOT/scripts/bootstrap.sh" "$TEMP_WORKTREE/scripts/"
-cp "$PROJECT_ROOT/scripts/install.ps1" "$TEMP_WORKTREE/scripts/"
-cp "$PROJECT_ROOT/scripts/bootstrap.ps1" "$TEMP_WORKTREE/scripts/"
-cp "$PROJECT_ROOT/scripts/install.bat" "$TEMP_WORKTREE/scripts/"
-cp "$PROJECT_ROOT/scripts/bootstrap.bat" "$TEMP_WORKTREE/scripts/"
+cp "$PROJECT_ROOT/scripts/install.sh"     "$TEMP_WORKTREE/scripts/"
+cp "$PROJECT_ROOT/scripts/bootstrap.sh"   "$TEMP_WORKTREE/scripts/"
+cp "$PROJECT_ROOT/scripts/install.ps1"    "$TEMP_WORKTREE/scripts/"
+cp "$PROJECT_ROOT/scripts/bootstrap.ps1"  "$TEMP_WORKTREE/scripts/"
+cp "$PROJECT_ROOT/scripts/install.bat"    "$TEMP_WORKTREE/scripts/"
+cp "$PROJECT_ROOT/scripts/bootstrap.bat"  "$TEMP_WORKTREE/scripts/"
 
-# 检查是否有变更
 pushd "$TEMP_WORKTREE" &>/dev/null
 if git status --porcelain | grep -q .; then
   git add -A
@@ -112,43 +115,46 @@ popd &>/dev/null
 git worktree remove "$TEMP_WORKTREE" 2>/dev/null || true
 rm -rf "$TEMP_WORKTREE"
 
-# ── 3. 打 tag 并创建 release ────────────────────────────
+# ── 3. 打 tag ────────────────────────────────────────────
 
 echo ""
-echo "▶ 创建 release $VERSION..."
+echo "▶ 创建 tag $VERSION..."
 
-# 检查是否已存在同名 tag（本地和远程）
 if git tag | grep -q "^${VERSION}$"; then
   echo "  本地 tag $VERSION 已存在，删除重建"
   git tag -d "$VERSION"
 fi
 
-# 这个 tag 指向本地 main 的最新提交（只是用来追踪版本，不推源码）
 git tag "$VERSION"
-
-# 推送 tag 到 dist remote
 git push "$REMOTE" "$VERSION" || true
 
-# 创建 release（如果已存在会失败，忽略）
+# ── 4. 创建 release（不含文件） ─────────────────────────
+
+echo ""
+echo "▶ 创建 release..."
+
+# 如果之前跑失败留下了同名 release/draft，先清理
+gh release delete "$VERSION" -R "$REPO" --yes 2>/dev/null || true
+
 gh release create "$VERSION" \
-  "$OUT_DIR/atlas-darwin-arm64" \
-  "$OUT_DIR/atlas-darwin-x64" \
-  "$OUT_DIR/atlas-linux-arm64" \
-  "$OUT_DIR/atlas-linux-x64" \
-  "$OUT_DIR/atlas-windows-x64.exe" \
   -R "$REPO" \
   --title "$VERSION" \
-  --notes "$VERSION" 2>&1 || {
-    # 如果 release 已存在，尝试更新
-    echo "  release 可能已存在，尝试更新..."
-    gh release upload "$VERSION" \
-      "$OUT_DIR/atlas-darwin-arm64" \
-      "$OUT_DIR/atlas-darwin-x64" \
-      "$OUT_DIR/atlas-linux-arm64" \
-      "$OUT_DIR/atlas-linux-x64" \
-      "$OUT_DIR/atlas-windows-x64.exe" \
-      -R "$REPO" --clobber 2>&1 || true
-  }
+  --notes "$VERSION"
+
+echo "  release 已创建"
+
+# ── 5. 逐个上传二进制（避免超时） ──────────────────────
+
+echo ""
+echo "▶ 上传二进制..."
+
+for bin in "${BINARIES[@]}"; do
+  name="$(basename "$bin")"
+  echo -n "  上传 $name ... "
+  gh release upload "$VERSION" "$bin" \
+    -R "$REPO" --clobber 2>&1 | head -1 || true
+  echo "done"
+done
 
 # ── 完成 ──────────────────────────────────────────────────
 
