@@ -72,9 +72,8 @@ function Confirm-Size {
 
 function Ensure-Atlas {
   $atlasExe = Join-Path $AtlasBin 'atlas.exe'
-  if (Test-Path $atlasExe) { Write-Log "atlas binary OK ($atlasExe)"; return }
 
-  # Local-repo fallback
+  # Local-repo fallback — 有本地编译二进制优先使用
   $scriptDir = Split-Path -Parent $PSCommandPath
   $repoRoot  = Split-Path -Parent $scriptDir
   $localBin  = Join-Path $repoRoot 'dist-bun\atlas-windows-x64.exe'
@@ -95,6 +94,7 @@ function Ensure-Atlas {
     }
   }
 
+  # 从 GitHub Releases 下载最新版（每次都覆盖，确保最新）
   $artifact = "atlas-$Platform.exe"
   if ($ReleaseTag -eq 'latest') {
     $url = "https://github.com/$GhRepo/releases/latest/download/$artifact"

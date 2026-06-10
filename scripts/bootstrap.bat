@@ -69,22 +69,18 @@ if not "%ATLAS_BOOTSTRAP_YES%"=="1" (
 )
 
 REM ---- ensure_atlas ----
-if exist "%ATLAS_BIN%\atlas.exe" (
-  echo [bootstrap] atlas binary OK (%ATLAS_BIN%\atlas.exe)
+if "%ATLAS_RELEASE_TAG%"=="latest" (
+  set ATLAS_URL=https://github.com/%GH_REPO%/releases/latest/download/atlas-windows-x64.exe
 ) else (
-  if "%ATLAS_RELEASE_TAG%"=="latest" (
-    set ATLAS_URL=https://github.com/%GH_REPO%/releases/latest/download/atlas-windows-x64.exe
-  ) else (
-    set ATLAS_URL=https://github.com/%GH_REPO%/releases/download/%ATLAS_RELEASE_TAG%/atlas-windows-x64.exe
-  )
-  echo [bootstrap] Downloading atlas binary from !ATLAS_URL!
-  curl -fsSL --retry 3 -o "%ATLAS_BIN%\atlas.exe" "!ATLAS_URL!"
+  set ATLAS_URL=https://github.com/%GH_REPO%/releases/download/%ATLAS_RELEASE_TAG%/atlas-windows-x64.exe
+)
+echo [bootstrap] Downloading atlas binary from !ATLAS_URL!
+curl -fsSL --retry 3 -o "%ATLAS_BIN%\atlas.exe" "!ATLAS_URL!"
   if errorlevel 1 (
     echo [bootstrap] Failed to download atlas binary.
     exit /b 1
   )
   echo [bootstrap] atlas binary installed.
-)
 
 REM ---- ensure_node + npm/npx shims ----
 set ATLAS_NODE_BIN=
