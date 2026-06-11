@@ -37,7 +37,7 @@ export async function exportCmd(opts: BaselineExportCmdOpts): Promise<void> {
   const projectId = resolved.id;
   const projName: string | null = resolved.name ?? null;
 
-  const { items } = await fetchLinePlans(client as any, { projectId });
+  const { items } = await fetchLinePlans(client, { projectId });
   const depts = opts.department ? await loadDepartments(client) : [];
 
   const sinceMs = opts.since ? Date.parse(opts.since) : undefined;
@@ -124,8 +124,10 @@ function collectKeys(items: readonly LinePlan[]): string[] {
 }
 
 function csvEscape(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  // OWASP CSV Injection: prefix with ' if value starts with = + - @ \t \r
+  const sanitized = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  if (/[",\n]/.test(sanitized)) return `"${sanitized.replace(/"/g, '""')}"`;
+  return sanitized;
 }
 
 function stringifyCell(v: unknown): string {

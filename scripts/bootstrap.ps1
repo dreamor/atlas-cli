@@ -98,17 +98,41 @@ function Ensure-Atlas {
   $artifact = "atlas-$Platform.exe"
   if ($ReleaseTag -eq 'latest') {
     $url = "https://github.com/$GhRepo/releases/latest/download/$artifact"
+    $checksumsUrl = "https://github.com/$GhRepo/releases/latest/download/SHA256SUMS"
   } else {
     $url = "https://github.com/$GhRepo/releases/download/$ReleaseTag/$artifact"
+    $checksumsUrl = "https://github.com/$GhRepo/releases/download/$ReleaseTag/SHA256SUMS"
   }
   Write-Log "Downloading atlas binary from $url"
+  $tmpBin = Join-Path $env:TEMP "atlas-bin-$([guid]::NewGuid()).exe"
   try {
-    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $atlasExe
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmpBin
   } catch {
     Write-Err2 "Failed to download atlas binary: $_"
     Write-Err2 'Hint: set GH_REPO or ATLAS_RELEASE_TAG, or run `npm run build:bun:win-x64` locally.'
     exit 1
   }
+
+  # SHA256 校验
+  try {
+    $tmpSums = Join-Path $env:TEMP "atlas-sums-$([guid]::NewGuid()).txt"
+    Invoke-WebRequest -UseBasicParsing -Uri $checksumsUrl -OutFile $tmpSums -ErrorAction Stop
+    $actualHash = (Get-FileHash -Path $tmpBin -Algorithm SHA256).Hash.ToLower()
+    $expectedLine = Select-String -Path $tmpSums -Pattern "^$actualHash\s" -SimpleMatch:$false
+    if ($expectedLine) {
+      Write-Log "SHA256 校验通过 ($artifact)"
+    } else {
+      Write-Err2 "SHA256 校验失败：$artifact 的签名不匹配"
+      Write-Err2 "  实际 SHA256: $actualHash"
+      Remove-Item $tmpBin -Force
+      exit 1
+    }
+    Remove-Item $tmpSums -Force
+  } catch {
+    Write-Log "SHA256SUMS 不可用，跳过签名校验"
+  }
+
+  Move-Item $tmpBin $atlasExe -Force
   Write-Log 'atlas binary installed.'
 }
 

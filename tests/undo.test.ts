@@ -39,7 +39,7 @@ describe('undo manifest store', () => {
 
   it('newToken returns matching shape', () => {
     const t = newToken('fill', '2548');
-    expect(t).toMatch(/^fill-2548-\d{14}-[a-z0-9]{6}$/);
+    expect(t).toMatch(/^fill-2548-\d{14}-[a-z0-9]{8}$/);
   });
 
   it('writeManifest then loadManifest round-trips', async () => {

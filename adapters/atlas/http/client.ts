@@ -8,10 +8,13 @@ import {
   BanmaApiError,
   SessionExpiredError,
 } from '../util/errors.js';
-import { BASE_URL, DEFAULT_USER_AGENT } from '../util/paths.js';
+import { BASE_URL, DEFAULT_USER_AGENT, TARGET_HOST } from '../util/paths.js';
 import { buildCookieHeader, type Session } from '../auth/session.js';
 import { checkDaemon, daemonExec } from '../daemon/client.js';
 import { isSandboxCached } from '../util/sandbox.js';
+
+/** Cap on response body bytes to prevent OOM from unexpected large responses. */
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export interface RequestOptions {
   readonly path: string;
@@ -104,6 +107,8 @@ export function createClient(session: Session): BanmaClient {
           method,
           headers,
           body: bodyPayload,
+          headersTimeout: 10_000,
+          bodyTimeout: 30_000,
         });
 
         // Detect SSO redirect (undici follows 0 redirects only when explicitly set,
@@ -120,14 +125,16 @@ export function createClient(session: Session): BanmaClient {
         }
 
         if (res.statusCode === 429 || res.statusCode >= 500) {
+          // Consume the response body to free the socket before retrying
+          const text = await res.body.text();
           await backoff(attempt);
           attempt += 1;
-          lastErr = new Error(`HTTP ${res.statusCode}`);
+          lastErr = new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`);
           continue;
         }
 
         if (res.statusCode >= 400) {
-          const text = await res.body.text();
+          const text = await safeReadBody(res);
           throw new BanmaApiError({
             errCode: String(res.statusCode),
             errorMsg: `HTTP ${res.statusCode}: ${text.slice(0, 200)}`,
@@ -136,7 +143,7 @@ export function createClient(session: Session): BanmaClient {
           });
         }
 
-        const text = await res.body.text();
+        const text = await safeReadBody(res);
         let parsed: unknown;
         try {
           parsed = JSON.parse(text);
@@ -187,8 +194,39 @@ export function createClient(session: Session): BanmaClient {
   };
 }
 
+/** Read response body with a size cap to prevent OOM. */
+async function safeReadBody(res: Awaited<ReturnType<typeof request>>): Promise<string> {
+  let accumulated = '';
+  for await (const chunk of res.body) {
+    accumulated += chunk.toString();
+    if (accumulated.length > MAX_RESPONSE_BYTES) {
+      // Consume the rest silently to free the socket, then truncate
+      // (the destructor of res.body in undici handles cleanup)
+      break;
+    }
+  }
+  return accumulated.slice(0, MAX_RESPONSE_BYTES);
+}
+
+/** Build URL from path, enforcing target host to prevent SSRF via absolute URLs. */
 function buildUrl(path: string, query?: Record<string, string | number | undefined>): string {
-  const url = new URL(path.startsWith('http') ? path : `${BASE_URL}${path}`);
+  let urlStr: string;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    // Only allow absolute URLs that point to the target host
+    const u = new URL(path);
+    if (u.host !== TARGET_HOST) {
+      throw new BanmaApiError({
+        errCode: 'SSRF_GUARD',
+        errorMsg: `Host ${u.host} is not allowed`,
+        httpStatus: 400,
+        path,
+      });
+    }
+    urlStr = path;
+  } else {
+    urlStr = `${BASE_URL}${path}`;
+  }
+  const url = new URL(urlStr);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v === undefined) continue;

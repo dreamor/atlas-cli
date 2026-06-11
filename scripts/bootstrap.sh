@@ -100,18 +100,58 @@ ensure_atlas() {
 
   # 从 GitHub Releases 下载最新版（每次都覆盖，确保最新）
   local artifact="atlas-${PLATFORM}"
-  local url
+  local bin_url checksums_url
   if [[ "$ATLAS_RELEASE_TAG" == "latest" ]]; then
-    url="https://github.com/${GH_REPO}/releases/latest/download/${artifact}"
+    bin_url="https://github.com/${GH_REPO}/releases/latest/download/${artifact}"
+    checksums_url="https://github.com/${GH_REPO}/releases/latest/download/SHA256SUMS"
   else
-    url="https://github.com/${GH_REPO}/releases/download/${ATLAS_RELEASE_TAG}/${artifact}"
+    bin_url="https://github.com/${GH_REPO}/releases/download/${ATLAS_RELEASE_TAG}/${artifact}"
+    checksums_url="https://github.com/${GH_REPO}/releases/download/${ATLAS_RELEASE_TAG}/SHA256SUMS"
   fi
-  log "Downloading atlas binary from $url"
-  if ! curl -fsSL --retry 3 -o "$ATLAS_BIN/atlas" "$url"; then
+
+  local tmp_bin
+  tmp_bin="$(mktemp -t atlas-bin.XXXXXX)"
+
+  log "Downloading atlas binary from $bin_url"
+  if ! curl -fsSL --retry 3 -o "$tmp_bin" "$bin_url"; then
     err "Failed to download atlas binary."
     err "Hint: set GH_REPO or ATLAS_RELEASE_TAG, or run \`npm run build:bun\` locally."
+    rm -f "$tmp_bin"
     exit 1
   fi
+
+  # SHA256 校验（optional：如果 SHA256SUMS 不存在则跳过）
+  if command -v sha256sum &>/dev/null || command -v shasum &>/dev/null; then
+    local tmp_checksums
+    tmp_checksums="$(mktemp -t atlas-sums.XXXXXX)"
+    if curl -fsSL --retry 3 -o "$tmp_checksums" "$checksums_url"; then
+      local actual_sha=""
+      if command -v sha256sum &>/dev/null; then
+        actual_sha="$(sha256sum "$tmp_bin" | cut -d' ' -f1)"
+      else
+        actual_sha="$(shasum -a 256 "$tmp_bin" | cut -d' ' -f1)"
+      fi
+      # 在 SHA256SUMS 中查找匹配 <hash>  <artifact> 的行
+      local expected_line=""
+      expected_line="$(grep -E "^${actual_sha}[[:space:]]+(\\*)?${artifact}\$" "$tmp_checksums" | head -1)"
+      if [[ -n "$expected_line" ]]; then
+        log "SHA256 校验通过 ($artifact)"
+      else
+        err "SHA256 校验失败：$artifact 的签名不匹配"
+        err "  实际 SHA256: $actual_sha"
+        err "  请检查下载是否完整或网络是否被篡改"
+        rm -f "$tmp_bin" "$tmp_checksums"
+        exit 1
+      fi
+    else
+      log "SHA256SUMS 不可用，跳过签名校验"
+    fi
+    rm -f "$tmp_checksums"
+  else
+    log "sha256sum/shasum 不可用，跳过签名校验"
+  fi
+
+  mv "$tmp_bin" "$ATLAS_BIN/atlas"
   chmod +x "$ATLAS_BIN/atlas"
   if [[ "$PLATFORM" == darwin-* ]]; then
     xattr -d com.apple.quarantine "$ATLAS_BIN/atlas" 2>/dev/null || true

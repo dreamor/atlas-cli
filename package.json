@@ -1,6 +1,6 @@
 {
   "name": "atlas-cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Atlas CLI - 斑马云图人力基线管理工具",
   "private": true,
   "type": "module",

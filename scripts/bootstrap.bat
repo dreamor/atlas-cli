@@ -71,16 +71,44 @@ if not "%ATLAS_BOOTSTRAP_YES%"=="1" (
 REM ---- ensure_atlas ----
 if "%ATLAS_RELEASE_TAG%"=="latest" (
   set ATLAS_URL=https://github.com/%GH_REPO%/releases/latest/download/atlas-windows-x64.exe
+  set SHA256SUMS_URL=https://github.com/%GH_REPO%/releases/latest/download/SHA256SUMS
 ) else (
   set ATLAS_URL=https://github.com/%GH_REPO%/releases/download/%ATLAS_RELEASE_TAG%/atlas-windows-x64.exe
+  set SHA256SUMS_URL=https://github.com/%GH_REPO%/releases/download/%ATLAS_RELEASE_TAG%/SHA256SUMS
 )
 echo [bootstrap] Downloading atlas binary from !ATLAS_URL!
-curl -fsSL --retry 3 -o "%ATLAS_BIN%\atlas.exe" "!ATLAS_URL!"
-  if errorlevel 1 (
-    echo [bootstrap] Failed to download atlas binary.
-    exit /b 1
+set TMP_BIN=%TEMP%\atlas-bin-%RANDOM%.exe
+curl -fsSL --retry 3 -o "%TMP_BIN%" "!ATLAS_URL!"
+if errorlevel 1 (
+  echo [bootstrap] Failed to download atlas binary.
+  exit /b 1
+)
+
+REM SHA256 校验（可选，SHA256SUMS 下载失败则跳过）
+set TMP_SUMS=%TEMP%\atlas-sums-%RANDOM%.txt
+curl -fsSL --retry 2 -o "%TMP_SUMS%" "!SHA256SUMS_URL!" 2>nul
+if not errorlevel 1 if exist "%TMP_SUMS%" (
+  REM certutil outputs hash in format: <hash> <filename>
+  for /f "usebackq tokens=1 delims= " %%h in (`certutil -hashfile "%TMP_BIN%" SHA256 2^>nul ^| findstr /i "^[0-9a-f]"`) do set ACTUAL_SHA=%%h
+  if not "!ACTUAL_SHA!"=="" (
+    findstr /i "!ACTUAL_SHA!" "%TMP_SUMS%" >nul 2>nul
+    if not errorlevel 1 (
+      echo [bootstrap] SHA256 校验通过
+    ) else (
+      echo [bootstrap] SHA256 校验失败：签名不匹配
+      echo [bootstrap]   实际 SHA256: !ACTUAL_SHA!
+      del "%TMP_BIN%" 2>nul
+      del "%TMP_SUMS%" 2>nul
+      exit /b 1
+    )
   )
-  echo [bootstrap] atlas binary installed.
+  del "%TMP_SUMS%" 2>nul
+) else (
+  echo [bootstrap] SHA256SUMS 不可用，跳过签名校验
+)
+
+move /y "%TMP_BIN%" "%ATLAS_BIN%\atlas.exe" >nul
+echo [bootstrap] atlas binary installed.
 
 REM ---- ensure_node + npm/npx shims ----
 set ATLAS_NODE_BIN=

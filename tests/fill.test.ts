@@ -27,15 +27,12 @@ describe('renderTemplate', () => {
     expect(out.trim()).toBe('{ "id": 12345, "areaCode": "CN" }');
   });
 
-  it('does not throw on missing fields', () => {
+  it('throws on missing fields (throwOnUndefined)', () => {
     // Arrange
     const tpl = '{ "missing": "{{ row.nope }}" }';
 
-    // Act
-    const out = renderTemplate(tpl, { row: sampleRow, projectId: '2548' });
-
-    // Assert
-    expect(out).toContain('"missing"');
+    // Act & Assert
+    expect(() => renderTemplate(tpl, { row: sampleRow, projectId: '2548' })).toThrow();
   });
 
   it('exposes projectId to the template', () => {

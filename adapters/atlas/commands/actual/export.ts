@@ -14,6 +14,7 @@ import {
   summarizeActual,
   type ActualFilter,
   type ActualStaffRow,
+  type ActualSummaryAxis,
 } from '../_actual_logic.js';
 import { loadDepartments } from '../../dict/cache.js';
 import { resolveDept } from '../../dict/resolve.js';
@@ -71,7 +72,7 @@ export async function exportCmd(opts: ActualExportCmdOpts): Promise<void> {
       month: monthParam,
       staffId: session.empId,
     }),
-    loadDepartments(client as any),
+    loadDepartments(client),
   ]);
 
   let allRows = flattenWeeklySummary(result.data ?? []);
@@ -92,8 +93,8 @@ export async function exportCmd(opts: ActualExportCmdOpts): Promise<void> {
   const resolveDepartment: DepartmentResolver = (id) =>
     resolveDept(depts, (id ?? null) as string | number | null) ?? '';
 
-  const axis = opts.by ?? 'month';
-  const summaryData = summarizeActual(filtered, axis as any, {
+  const axis: ActualSummaryAxis = (opts.by ?? 'month') as ActualSummaryAxis;
+  const summaryData = summarizeActual(filtered, axis, {
     from: opts.from,
     to: opts.to,
   });
@@ -161,6 +162,8 @@ function stringifyCell(v: unknown): string {
 }
 
 function csvEscape(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  // OWASP CSV Injection: prefix with ' if value starts with = + - @ \t \r
+  const sanitized = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  if (/[",\n]/.test(sanitized)) return `"${sanitized.replace(/"/g, '""')}"`;
+  return sanitized;
 }

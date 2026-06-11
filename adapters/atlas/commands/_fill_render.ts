@@ -3,10 +3,14 @@ import type { LinePlan } from '../schema/models.js';
 
 const env = new nunjucks.Environment(null, {
   autoescape: false,
-  throwOnUndefined: false,
+  throwOnUndefined: true,
   trimBlocks: true,
   lstripBlocks: true,
 });
+
+// JSON-safe dump filter: serializes any value to JSON without the nunjucks
+// default object toString which can leak internal state or produce invalid JSON.
+env.addFilter('dump', (v: unknown) => JSON.stringify(v ?? null));
 
 export interface RenderContext {
   readonly row: LinePlan;

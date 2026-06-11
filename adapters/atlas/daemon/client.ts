@@ -1,7 +1,23 @@
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
+import { readFile } from 'node:fs/promises';
 
 const DEFAULT_PORT = 8765;
+const CONFIG_DIR = `${process.env.HOME ?? '/tmp'}/.config/atlas`;
+const TOKEN_FILE = `${CONFIG_DIR}/daemon.token`;
+
+let cachedToken: string | null = null;
+
+/** Read the daemon auth token from disk (lazy cache). */
+async function getAuthToken(): Promise<string> {
+  if (cachedToken) return cachedToken;
+  try {
+    cachedToken = (await readFile(TOKEN_FILE, 'utf8')).trim();
+  } catch {
+    cachedToken = '';
+  }
+  return cachedToken;
+}
 
 export interface DaemonStatus {
   status: 'authenticated' | 'not_authenticated';
@@ -33,6 +49,15 @@ async function httpRequestPromise(
     headers?: Record<string, string>;
   } = {},
 ): Promise<{ status: number; data: string }> {
+  // Inject auth token into every request
+  const token = await getAuthToken();
+  const headers: Record<string, string> = {
+    ...options.headers,
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const isHttps = parsedUrl.protocol === 'https:';
@@ -42,7 +67,7 @@ async function httpRequestPromise(
       url,
       {
         method: options.method || 'GET',
-        headers: options.headers,
+        headers,
       },
       (res) => {
         let data = '';

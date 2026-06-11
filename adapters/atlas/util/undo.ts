@@ -20,9 +20,10 @@
  * need the original sheet to reverse it cleanly — out of scope for P2.
  */
 
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile, chmod } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Resolved at call time so tests can override HOME after import. Production
@@ -62,7 +63,7 @@ const TOKEN_RE = /^[a-zA-Z0-9._-]+$/;
 
 export function newToken(command: UndoCommand, projectId: string): string {
   const ts = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-  const rand = Math.random().toString(36).slice(2, 8);
+  const rand = randomUUID().replace(/-/g, '').slice(0, 8);
   return `${command}-${projectId}-${ts}-${rand}`;
 }
 
@@ -78,9 +79,9 @@ function validateToken(token: string): void {
 }
 
 export async function writeManifest(manifest: UndoManifest): Promise<string> {
-  await mkdir(undoDir(), { recursive: true });
+  await mkdir(undoDir(), { recursive: true, mode: 0o700 });
   const p = manifestPath(manifest.token);
-  await writeFile(p, JSON.stringify(manifest, null, 2), 'utf8');
+  await writeFile(p, JSON.stringify(manifest, null, 2), { encoding: 'utf8', mode: 0o600 });
   return p;
 }
 
@@ -105,7 +106,7 @@ export async function markUndone(token: string): Promise<UndoManifest> {
     throw new Error(`Manifest ${token} was already undone at ${m.undoneAt}.`);
   }
   const next: UndoManifest = { ...m, undoneAt: new Date().toISOString() };
-  await writeFile(manifestPath(token), JSON.stringify(next, null, 2), 'utf8');
+  await writeFile(manifestPath(token), JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   return next;
 }
 

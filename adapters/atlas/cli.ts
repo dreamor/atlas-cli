@@ -74,7 +74,8 @@ function handleError(err: unknown): never {
     process.exit(64);
   }
   // eslint-disable-next-line no-console
-  console.error(err instanceof Error ? err.stack ?? err.message : String(err));
+  const debug = process.env.DEBUG === '1';
+  console.error(err instanceof Error ? (debug ? err.stack ?? err.message : err.message) : String(err));
   process.exit(1);
 }
 

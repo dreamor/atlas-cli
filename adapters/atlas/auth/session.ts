@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, unlink, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { z } from 'zod';
 import {
   CONFIG_DIR,
   KEYTAR_ACCOUNT,
@@ -30,6 +31,26 @@ export interface Session {
   readonly savedAt: string; // ISO
 }
 
+/** Zod schema for runtime validation of session data (prevents injection). */
+const sessionSchema = z.object({
+  empId: z.string().min(1),
+  account: z.string().min(1),
+  bucToken: z.string(),
+  companyId: z.string(),
+  userAgent: z.string().min(1),
+  savedAt: z.string().min(1),
+  cookies: z.array(z.object({
+    name: z.string().min(1),
+    value: z.string(),
+    domain: z.string().optional(),
+    path: z.string().optional(),
+    expires: z.number().optional(),
+    httpOnly: z.boolean().optional(),
+    secure: z.boolean().optional(),
+    sameSite: z.string().optional(),
+  })),
+});
+
 interface KeytarLike {
   setPassword(service: string, account: string, password: string): Promise<void>;
   getPassword(service: string, account: string): Promise<string | null>;
@@ -52,6 +73,9 @@ async function ensureConfigDir(): Promise<void> {
 }
 
 export async function saveSession(session: Session): Promise<{ via: 'keytar' | 'file' }> {
+  // Validate session before persisting
+  sessionSchema.parse(session);
+
   const payload = JSON.stringify(session);
   const keytar = await loadKeytar();
   if (keytar) {
@@ -64,8 +88,10 @@ export async function saveSession(session: Session): Promise<{ via: 'keytar' | '
   }
   await ensureConfigDir();
   await mkdir(dirname(SESSION_FILE), { recursive: true });
-  await writeFile(SESSION_FILE, payload, { encoding: 'utf8' });
-  await chmod(SESSION_FILE, 0o600);
+  // Atomic write: write to temp then rename to prevent partial reads
+  const tmp = `${SESSION_FILE}.tmp.${Date.now()}`;
+  await writeFile(tmp, payload, { encoding: 'utf8', mode: 0o600 });
+  await rename(tmp, SESSION_FILE);
   return { via: 'file' };
 }
 
@@ -134,29 +160,34 @@ export async function clearSession(): Promise<void> {
     }
   }
   try {
-    await writeFile(SESSION_FILE, '', { encoding: 'utf8' });
+    await unlink(SESSION_FILE);
   } catch {
-    // ignore
+    // ignore (file may not exist)
   }
 }
 
 function parseSession(raw: string): Session | null {
   try {
-    const obj = JSON.parse(raw) as Session;
-    if (!obj || typeof obj !== 'object') return null;
-    if (!obj.empId || !obj.account || !obj.bucToken || !Array.isArray(obj.cookies)) {
-      return null;
-    }
-    return obj;
+    const obj = JSON.parse(raw);
+    // Use Zod for full validation (prevents injection / malformed data)
+    const validated = sessionSchema.parse(obj);
+    return validated;
   } catch {
     return null;
   }
+}
+
+/** Check if a cookie name or value could be used for header injection. */
+function isSafeCookieValue(s: string): boolean {
+  // Reject CRLF injection and semicolons that would break cookie syntax
+  return !/[;\r\n]/.test(s);
 }
 
 /** Build a `Cookie` header from session cookie jar. */
 export function buildCookieHeader(cookies: readonly CookieEntry[]): string {
   return cookies
     .filter((c) => c.name && c.value !== undefined)
+    .filter((c) => isSafeCookieValue(c.name) && isSafeCookieValue(c.value))
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
 }

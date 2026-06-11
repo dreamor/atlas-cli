@@ -80,6 +80,29 @@ BINARIES=(
   "$OUT_DIR/atlas-windows-x64.exe"
 )
 
+# ── 2.5 生成 SHA256SUMS ──────────────────────────────────
+
+echo ""
+echo "▶ 生成 SHA256 校验和..."
+
+SHA256SUMS_FILE="$OUT_DIR/SHA256SUMS"
+# 清空旧文件
+: > "$SHA256SUMS_FILE"
+
+for bin in "${BINARIES[@]}"; do
+  name="$(basename "$bin")"
+  if command -v sha256sum &>/dev/null; then
+    (cd "$OUT_DIR" && sha256sum "$name") >> "$SHA256SUMS_FILE"
+  elif command -v shasum &>/dev/null; then
+    (cd "$OUT_DIR" && shasum -a 256 "$name") >> "$SHA256SUMS_FILE"
+  else
+    echo "错误：找不到 sha256sum 或 shasum" >&2
+    exit 1
+  fi
+done
+
+echo "  SHA256SUMS 已生成 ($(wc -l < "$SHA256SUMS_FILE") entries)"
+
 # ── 2. 同步安装脚本到 dist/main ──────────────────────────
 
 echo ""
@@ -143,10 +166,16 @@ gh release create "$VERSION" \
 
 echo "  release 已创建"
 
-# ── 5. 逐个上传二进制（避免超时） ──────────────────────
+# ── 5. 上传二进制 + SHA256SUMS ────────────────────────
 
 echo ""
-echo "▶ 上传二进制..."
+echo "▶ 上传二进制 + SHA256SUMS..."
+
+# 上传 SHA256SUMS（先上传，确保签名先到）
+echo -n "  上传 SHA256SUMS ... "
+gh release upload "$VERSION" "$SHA256SUMS_FILE" \
+  -R "$REPO" --clobber 2>&1 | head -1 || true
+echo "done"
 
 for bin in "${BINARIES[@]}"; do
   name="$(basename "$bin")"
